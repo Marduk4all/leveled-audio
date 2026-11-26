@@ -761,9 +761,9 @@ Akzeptanzkriterien:
 - [x] Preset-Schichtung durch Tests abgedeckt, unbekannte Keys ergeben einen Fehler. *Unit-Tests (Basis, Datei, `--set`, Roundtrip, Fehlerfälle) und CLI-Test (Reihenfolge Datei ← `--set` ← Flag, Exit 2 bei Tippfehlern).*
 - [x] Zusätzlich: Die Korrekturiteration behebt die Abweichung aus Phase 3. *Synthetischer Dialog −16,55 → −16,21 LUFS. Deine Clips 001 und 004 vorher −16,8/−16,6, jetzt −16,2/−16,1.*
 
-### Phase 5: Hochpass, Griffgeräusche, Kompressor, Pausen-Absenkung (≈ 1,5 Wochen) – umgesetzt, Hörabnahme offen
+### Phase 5: Hochpass, Griffgeräusche, Kompressor, Pausen-Absenkung (≈ 1,5 Wochen) – umgesetzt
 
-> **Stand 2026-11-26:** Umgesetzt, 96 Tests grün, clippy sauber. Abweichungen vom Plan stehen in 3.7, 3.12 und 3.13.
+> **Stand 2026-11-26:** Umgesetzt, 96 Tests grün, clippy sauber. Hörabnahme bestanden (Knackser, Kompressor, Pausen-Übergänge nach Nachbesserung). Abweichungen vom Plan stehen in 3.7, 3.12 und 3.13.
 > - Hörproben: `Audio Samples - leveled-audio/F_Phase5_natuerlich/` (Default) und `G_Phase5_kraeftig/`, dazu `report_phase5_*.json`.
 > - Vergleich mit Referenz: `cargo run --release -p leveled-audio-pipeline --example compare_reference -- <unsere.wav> <referenz.wav> [--table]`.
 
@@ -835,9 +835,10 @@ Akzeptanzkriterien:
   - Pausen bei „kräftig“: −64 … −79 dBFS (Referenz −49 … −114).
   - *Abweichung:* „004 ohne Korrekturiteration“ ist nicht ganz erfüllt. Ein zusätzlicher Render-Durchlauf entfällt dank Limiter-Probe; der Gain wird aber aus der Probe korrigiert. Kurze Dateien (001, 003) brauchen noch einen zweiten Durchlauf.
 - [x] Performance bleibt ≥ 50× Echtzeit (3 h Stereo). Bestehende Tests grün. JSON-Report validiert gegen Schema-Version 2. *1-h-Stereodatei aus 004: 55× Echtzeit, 63 MB Speicher, sowohl natürlich als auch kräftig. Bestehende Tests: Isolierte Stufentests laufen ohne Hochpass/Kompressor.*
-- [ ] **Hörabnahme durch dich:**
+- [x] **Hörabnahme durch dich:**
   - 001–005 im Vergleich mit Referenz: Knackser deutlich leiser, Sprache natürlich, keine abgeschnittenen Laute, laute Stellen nicht gequetscht.
   - Die Pausen-Absenkung probierst du einmal mit `--pause-floor -60` und entscheidest, ob ihr Default aus bleibt.
+  - *Ergebnis:* Knackser und Kompressor passen. Die Pausen-Absenkung kam zuerst zu spät und abrupt; nach der Änderung (Haltezeit ab dem letzten Laut, 150-ms-Ausblende, siehe 3.11) freigegeben. Default bleibt aus (natürlich); `podcast-kraeftig` schaltet sie ein.
 
 ### Später (vorgemerkt, Architektur bereits vorbereitet)
 
