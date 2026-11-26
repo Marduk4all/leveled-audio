@@ -1,7 +1,7 @@
 //! Konsolenzusammenfassung und JSON-Report.
 
 use anyhow::{Context, Result};
-use leveled_audio_pipeline::{FileReport, PipelineError, Settings};
+use leveled_audio_pipeline::{AlbumReport, FileReport, PipelineError, Settings};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -154,6 +154,12 @@ pub fn print_summary(results: &[FileOutcome]) {
                 if let Some(reason) = report.denoise.as_ref().and_then(|d| d.skipped.as_ref()) {
                     notes.push(format!("  {}: Rauschreduktion aus – {reason}", r.display));
                 }
+                if let Some(c) = report.loudness_correction_db {
+                    notes.push(format!(
+                        "  {}: Lautheit nach dem Limiter um {c:+.1} dB nachkorrigiert",
+                        r.display
+                    ));
+                }
                 for warn in &report.warnings {
                     notes.push(format!("  {}: {warn}", r.display));
                 }
@@ -192,22 +198,89 @@ pub fn print_summary(results: &[FileOutcome]) {
     println!("\n{ok} ok, {err} Fehler, {} gesamt", results.len());
 }
 
+/// Version des JSON-Report-Formats (siehe `docs/report.schema.json`).
+pub const REPORT_SCHEMA_VERSION: u32 = 1;
+
+/// Kopfdaten des JSON-Reports.
+pub struct JsonMeta<'a> {
+    pub command: &'static str,
+    pub settings: &'a Settings,
+    pub album: Option<&'a AlbumReport>,
+}
+
+#[derive(Serialize)]
+struct Counts {
+    ok: usize,
+    skipped: usize,
+    errors: usize,
+    cancelled: usize,
+}
+
 #[derive(Serialize)]
 struct JsonReport<'a> {
+    schema_version: u32,
     tool: &'static str,
     version: &'static str,
+    command: &'static str,
+    settings: &'a Settings,
+    /// Prüfsumme der effektiven Einstellungen: gleiche Prüfsumme = gleiche Verarbeitung.
+    settings_hash: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    settings: Option<&'a Settings>,
+    album: Option<&'a AlbumReport>,
+    summary: Counts,
     files: &'a [FileOutcome],
 }
 
-pub fn write_json(path: &Path, files: &[FileOutcome], settings: Option<&Settings>) -> Result<()> {
+/// FNV-1a (64 bit) über die kanonische JSON-Form der Einstellungen. Keine
+/// kryptografische Prüfsumme, nur zum Wiedererkennen identischer Settings.
+pub fn settings_hash(settings: &Settings) -> String {
+    let json = serde_json::to_string(settings).expect("Settings sind serialisierbar");
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in json.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("fnv1a64:{h:016x}")
+}
+
+pub fn write_json(path: &Path, files: &[FileOutcome], meta: JsonMeta) -> Result<()> {
+    let count = |f: fn(&Status) -> bool| files.iter().filter(|o| f(&o.status)).count();
     let rep = JsonReport {
+        schema_version: REPORT_SCHEMA_VERSION,
         tool: "leveled-audio",
         version: env!("CARGO_PKG_VERSION"),
-        settings,
+        command: meta.command,
+        settings: meta.settings,
+        settings_hash: settings_hash(meta.settings),
+        album: meta.album,
+        summary: Counts {
+            ok: count(|s| matches!(s, Status::Ok { .. })),
+            skipped: count(|s| matches!(s, Status::Skipped { .. })),
+            errors: count(|s| matches!(s, Status::Error { .. })),
+            cancelled: count(|s| matches!(s, Status::Cancelled)),
+        },
         files,
     };
-    let text = serde_json::to_string_pretty(&rep)?;
+    let mut text = serde_json::to_string_pretty(&rep)?;
+    text.push('\n');
     std::fs::write(path, text).with_context(|| format!("JSON-Report {} schreiben", path.display()))
+}
+
+/// Album-Zeile vor der Tabelle.
+pub fn print_album(a: &AlbumReport) {
+    let f = |v: Option<f64>| v.map_or("–".into(), |v| format!("{v:.1}"));
+    let corr = a
+        .loudness_correction_db
+        .map_or(String::new(), |c| format!(" (davon Korrektur {c:+.1} dB)"));
+    println!(
+        "Album ({} Dateien): {} LUFS vor dem Gain, gemeinsamer Gain {} dB{corr}, Ausgabe {} LUFS",
+        a.files,
+        f(a.loudness_before_gain_lufs),
+        a.gain_db.map_or("–".into(), |g| format!("{g:+.1}")),
+        f(a.loudness_out_lufs),
+    );
+    for w in &a.warnings {
+        println!("  Hinweis: {w}");
+    }
+    println!();
 }

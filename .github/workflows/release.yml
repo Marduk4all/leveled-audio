@@ -1,0 +1,160 @@
+name: Release
+
+# Baut die Release-Binaries für macOS (Apple Silicon, Intel, Universal),
+# Windows und Linux, prüft, dass sie ohne Zusatzinstallation laufen, und
+# hängt sie mit SHA256-Summen an ein GitHub-Release.
+#
+# Auslöser: ein Tag `v*` (z. B. `git tag v0.1.0 && git push origin v0.1.0`)
+# oder manuell (dann nur Artefakte, kein Release).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          # C-Laufzeit statisch gelinkt (siehe .cargo/config.toml): kein VC-Redist nötig.
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        shell: bash
+        run: |
+          rustup show
+          rustup target add ${{ matrix.target }}
+      - name: musl-Werkzeuge
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Bauen
+        run: cargo build --release --locked --target ${{ matrix.target }} -p leveled-audio-cli
+
+      - name: Prüfen (Linux statisch gelinkt)
+        if: contains(matrix.target, 'linux')
+        run: |
+          bin=target/${{ matrix.target }}/release/leveled-audio
+          file "$bin"
+          out=$(ldd "$bin" 2>&1 || true)
+          echo "$out"
+          echo "$out" | grep -Eq "statically linked|not a dynamic executable"
+          "$bin" --version
+      - name: Prüfen (Windows ohne VC-Runtime-DLL)
+        if: contains(matrix.target, 'windows')
+        shell: pwsh
+        run: |
+          $bin = "target/${{ matrix.target }}/release/leveled-audio.exe"
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = Get-ChildItem -Path "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe | Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          $deps = & $dumpbin.FullName /dependents $bin | Out-String
+          Write-Output $deps
+          if ($deps -match '(?i)vcruntime|msvcp|ucrtbase|api-ms-win-crt') { throw "dynamische C-Laufzeit gefunden" }
+          & $bin --version
+      - name: Prüfen (macOS)
+        if: contains(matrix.target, 'apple')
+        run: |
+          bin=target/${{ matrix.target }}/release/leveled-audio
+          file "$bin"
+          otool -L "$bin"
+          if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then "$bin" --version; fi
+
+      - name: Paket
+        shell: bash
+        run: |
+          ver=${GITHUB_REF_NAME#v}
+          [ "$GITHUB_REF_TYPE" = "tag" ] || ver=dev
+          name=leveled-audio-$ver-${{ matrix.target }}
+          mkdir -p "dist/$name"
+          exe=leveled-audio; [[ "${{ matrix.target }}" == *windows* ]] && exe=leveled-audio.exe
+          cp "target/${{ matrix.target }}/release/$exe" README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
+          cp docs/ANLEITUNG.md docs/report.schema.json "dist/$name/"
+          cd dist
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            7z a "$name.zip" "$name" > /dev/null
+          else
+            tar czf "$name.tar.gz" "$name"
+          fi
+          rm -r "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*
+      # Für das Universal-Binary das nackte Binary weitergeben.
+      - uses: actions/upload-artifact@v4
+        if: contains(matrix.target, 'apple')
+        with:
+          name: bin-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/leveled-audio
+
+  universal:
+    name: macOS Universal
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bin-*
+      - name: lipo
+        run: |
+          ver=${GITHUB_REF_NAME#v}
+          [ "$GITHUB_REF_TYPE" = "tag" ] || ver=dev
+          name=leveled-audio-$ver-universal-apple-darwin
+          mkdir -p "dist/$name"
+          lipo -create -output "dist/$name/leveled-audio" \
+            bin-aarch64-apple-darwin/leveled-audio bin-x86_64-apple-darwin/leveled-audio
+          chmod +x "dist/$name/leveled-audio"
+          lipo -info "dist/$name/leveled-audio"
+          "dist/$name/leveled-audio" --version
+          cp README.md LICENSE-MIT LICENSE-APACHE docs/ANLEITUNG.md docs/report.schema.json "dist/$name/"
+          cd dist && tar czf "$name.tar.gz" "$name" && rm -r "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: universal-apple-darwin
+          path: dist/*
+
+  release:
+    name: GitHub-Release
+    if: github.ref_type == 'tag'
+    needs: [build, universal]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: SHA256-Summen
+        run: |
+          cd dist
+          rm -f leveled-audio   # nackte Binaries für lipo nicht veröffentlichen
+          sha256sum leveled-audio-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Release anlegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/leveled-audio-* dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --title "leveled-audio $GITHUB_REF_NAME" --generate-notes

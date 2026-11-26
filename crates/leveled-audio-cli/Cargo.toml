@@ -23,6 +23,7 @@ anyhow.workspace = true
 ctrlc.workspace = true
 
 [dev-dependencies]
+jsonschema.workspace = true
 leveled-audio-testkit.workspace = true
 
 [lints]

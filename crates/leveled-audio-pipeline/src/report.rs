@@ -67,7 +67,10 @@ pub struct FileReport {
     pub dc_offset_dbfs: Vec<Option<f64>>,
     pub denoise: Option<DenoiseReport>,
     pub leveler: Option<LevelerStats>,
+    /// Angewendeter Normalisierungs-Gain (inklusive Korrektur).
     pub normalization_gain_db: Option<f64>,
+    /// Zusätzlicher Gain der Korrekturiteration, falls eine nötig war.
+    pub loudness_correction_db: Option<f64>,
     pub limiter: Option<LimiterReport>,
     pub output: Option<OutputInfo>,
     pub loudness_out: Option<LoudnessStats>,
@@ -75,4 +78,19 @@ pub struct FileReport {
     pub elapsed_s: f64,
     /// Audiodauer / Rechenzeit.
     pub realtime_factor: f64,
+}
+
+/// Album-Modus: gemeinsamer Gain und Album-Lautheit.
+#[derive(Debug, Clone, Serialize)]
+pub struct AlbumReport {
+    /// Anzahl der Dateien, die in die Album-Lautheit eingehen.
+    pub files: usize,
+    /// Gemeinsame Lautheit nach Rauschreduktion und Leveler, vor dem Gain.
+    pub loudness_before_gain_lufs: Option<f64>,
+    /// Für alle Dateien gleicher Normalisierungs-Gain (inklusive Korrektur).
+    pub gain_db: Option<f64>,
+    pub loudness_correction_db: Option<f64>,
+    /// Gemeinsame Lautheit der Ausgabe.
+    pub loudness_out_lufs: Option<f64>,
+    pub warnings: Vec<String>,
 }

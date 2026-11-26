@@ -8,11 +8,12 @@
 //! 2. **Messen** (nur mit Rauschreduktion/Leveler): Lautheit nach beiden.
 //! 3. **Rendern**: Entrauschen → Leveler → Gain → True-Peak-Limiter → Dither → Datei.
 
+use crate::batch::run_batch;
 use crate::denoise_stage::DenoiseStage;
 use crate::leveler_stage::LevelerStage;
 use crate::noise::{NoisePlan, plan_noise, save_profile};
 use crate::progress::{CancelToken, Pass, ProgressSink};
-use crate::report::{FileReport, InputInfo, LimiterReport, OutputInfo};
+use crate::report::{AlbumReport, DenoiseReport, FileReport, InputInfo, LimiterReport, OutputInfo};
 use crate::settings::{
     BitDepth, DenoiseSettings, DitherMode, GainRuleSetting, LevelerSettings, Settings,
 };
@@ -29,7 +30,7 @@ use leveled_audio_dsp::{
 use leveled_audio_io::{AudioSink, AudioSource, AudioSpec, SampleFormat};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Ab dieser Aussteuerung gilt ein Sample als „an der Grenze“ (1 LSB bei 16 bit).
 const CLIP_LEVEL: f32 = 1.0 - 1.0 / 32768.0;
@@ -58,6 +59,8 @@ pub(crate) struct InputAnalysis {
     pub features: Option<FrameFeatures>,
     pub classes: Vec<FrameClass>,
     pub minstat: Option<Vec<Vec<f32>>>,
+    /// Messung aus Pass 1 (für den Album-Modus ohne Pass 2).
+    pub meter: Option<LoudnessMeter>,
 }
 
 fn audio_err(path: &Path) -> impl FnOnce(leveled_audio_io::IoError) -> PipelineError + '_ {
@@ -170,6 +173,7 @@ fn analysis_pass(
         spec,
         frames,
         loudness: meter.stats().map_err(analysis_err)?,
+        meter: Some(meter),
         clip_runs,
         dc_dbfs,
         features,
@@ -211,10 +215,10 @@ fn input_warnings(a: &InputAnalysis) -> Vec<String> {
 fn base_report(
     path: &Path,
     a: &InputAnalysis,
-    started: Instant,
+    elapsed: Duration,
     mut warnings: Vec<String>,
 ) -> FileReport {
-    let elapsed = started.elapsed().as_secs_f64();
+    let elapsed = elapsed.as_secs_f64();
     let duration = a.frames as f64 / a.spec.sample_rate as f64;
     let mut all = input_warnings(a);
     all.append(&mut warnings);
@@ -227,6 +231,7 @@ fn base_report(
         denoise: None,
         leveler: None,
         normalization_gain_db: None,
+        loudness_correction_db: None,
         limiter: None,
         output: None,
         loudness_out: None,
@@ -332,7 +337,7 @@ pub fn analyze_file(
     if let Some(c) = &leveler {
         warnings.extend(leveler_warnings(c));
     }
-    let mut r = base_report(path, &a, started, warnings);
+    let mut r = base_report(path, &a, started.elapsed(), warnings);
     r.denoise = denoise;
     r.leveler = leveler.map(|c| c.stats);
     Ok(r)
@@ -357,7 +362,7 @@ pub fn learn_profile(
     let profile = plan.profile.ok_or_else(|| {
         PipelineError::Analysis(format!("{}: kein Rauschprofil bestimmbar", path.display()))
     })?;
-    let mut r = base_report(path, &a, started, plan.warnings);
+    let mut r = base_report(path, &a, started.elapsed(), plan.warnings);
     r.denoise = Some(plan.report);
     Ok((profile, r))
 }
@@ -496,7 +501,7 @@ fn measure_pass(
     id: usize,
     progress: &dyn ProgressSink,
     cancel: &CancelToken,
-) -> Result<LoudnessStats> {
+) -> Result<LoudnessMeter> {
     let ch = a.spec.channels as usize;
     let mut stage = power.map(|p| new_denoise_stage(a, p, d));
     let latency = stage.as_ref().map_or(0, |s| s.latency()) as u64;
@@ -532,32 +537,113 @@ fn measure_pass(
             Ok(())
         },
     )?;
-    meter.stats().map_err(analysis_err)
+    Ok(meter)
 }
 
-/// Komplette Verarbeitung: analysieren, entrauschen, normalisieren,
-/// limitieren, schreiben.
+/// Ab dieser Abweichung der Ausgangslautheit vom Ziel folgt eine Korrekturiteration.
+const CORRECTION_THRESHOLD_LU: f64 = 0.5;
+/// Höchstens so viele Korrekturiterationen (die zweite nur, wenn die erste
+/// nicht reicht; im Normalfall gar keine).
+const MAX_CORRECTIONS: usize = 2;
+/// Größte Gain-Änderung durch alle Korrekturiterationen zusammen.
+const CORRECTION_MAX_DB: f64 = 6.0;
+
+/// Sucht den Gain, bei dem die Ausgabe trotz Limiter das Ziel trifft.
 ///
-/// Geschrieben wird zuerst `<ausgabe>.partial`, erst nach Erfolg wird
-/// umbenannt. Bei Fehler oder Abbruch werden Teildateien gelöscht.
-pub fn process_file(
+/// Der Limiter macht den Zusammenhang Gain → Lautheit flacher als 1:1. Der
+/// erste Schritt nimmt Steigung 1 an, der zweite schätzt sie aus den beiden
+/// Messungen (Sekante), begrenzt auf 1 … 4 dB Gain je LU.
+struct Corrector {
+    target: f64,
+    first_gain: f64,
+    points: Vec<(f64, f64)>,
+}
+
+impl Corrector {
+    fn new(target: f64, gain_db: f64) -> Self {
+        Corrector {
+            target,
+            first_gain: gain_db,
+            points: Vec::new(),
+        }
+    }
+
+    /// Messung zum zuletzt verwendeten Gain eintragen; liefert den nächsten
+    /// Gain oder `None`, wenn das Ziel getroffen ist oder keine Iteration bleibt.
+    fn next(&mut self, gain_db: f64, lufs: f64) -> Option<f64> {
+        self.points.push((gain_db, lufs));
+        let dev = self.target - lufs;
+        if dev.abs() <= CORRECTION_THRESHOLD_LU || self.points.len() > MAX_CORRECTIONS {
+            return None;
+        }
+        let slope = match self.points[..] {
+            [.., (g0, l0), (g1, l1)] if (l1 - l0).abs() > 1e-3 => {
+                ((g1 - g0) / (l1 - l0)).clamp(1.0, 4.0)
+            }
+            _ => 1.0,
+        };
+        let next = (gain_db + slope * dev).clamp(
+            self.first_gain - CORRECTION_MAX_DB,
+            self.first_gain + CORRECTION_MAX_DB,
+        );
+        ((next - gain_db).abs() > 1e-3).then_some(next)
+    }
+
+    /// Gesamte Korrektur gegenüber dem ersten Gain, falls iteriert wurde.
+    fn correction(&self, final_gain: f64) -> Option<f64> {
+        (self.points.len() > 1).then_some(final_gain - self.first_gain)
+    }
+}
+
+/// Ergebnis von Analyse und Messung (Pass 1 und 2) einer Datei: alles, was
+/// das Rendern braucht. Die Feature-Arrays sind bereits verworfen; übrig
+/// bleiben VAD-Klassen, Rauschprofil und Leveler-Kurve (≈ 9 Byte je
+/// STFT-Frame, rund 10 MB je Stunde Audio bei 48 kHz).
+struct PreparedFile {
+    input: PathBuf,
+    /// Bisherige Rechenzeit (ohne Wartezeit an der Album-Barriere).
+    busy: Duration,
+    a: InputAnalysis,
+    noise_power: Option<Vec<Vec<f32>>>,
+    denoise_report: Option<DenoiseReport>,
+    leveler: Option<LevelerStage>,
+    warnings: Vec<String>,
+    /// Messung nach Rauschreduktion und Leveler, vor dem Normalisierungs-Gain.
+    measured: LoudnessMeter,
+}
+
+impl PreparedFile {
+    /// Integrierte Lautheit vor dem Normalisierungs-Gain.
+    fn loudness_lufs(&self) -> Option<f64> {
+        self.measured.stats().ok().and_then(|s| s.integrated_lufs)
+    }
+}
+
+/// Wie viele Durchgänge `prepare` braucht (für die Fortschrittsanzeige).
+fn prepare_passes(settings: &Settings) -> u32 {
+    if needs_analysis(settings) { 2 } else { 1 }
+}
+
+/// Pass 1 und 2 ohne Fortschrittsrahmen.
+fn prepare(
     input: &Path,
-    output: &Path,
     settings: &Settings,
     opts: &JobOptions,
     id: usize,
     progress: &dyn ProgressSink,
     cancel: &CancelToken,
-) -> Result<FileReport> {
+) -> Result<PreparedFile> {
     let started = Instant::now();
     let mut src = open(input)?;
     let total = src.total_frames();
     let d = &settings.denoise;
-    let analysis = needs_analysis(settings);
-    progress.file_started(id, total, if analysis { 3 } else { 2 });
 
     // ---- Pass 1: Analyse + Rauschprofil + Leveler-Kurve
-    let Planned { a, noise, leveler } = analyze_and_plan(
+    let Planned {
+        mut a,
+        noise,
+        leveler,
+    } = analyze_and_plan(
         src.as_mut(),
         input,
         settings,
@@ -566,6 +652,9 @@ pub fn process_file(
         progress,
         cancel,
     )?;
+    // Für das Rendern nicht mehr nötig; spart im Album-Modus Speicher.
+    a.features = None;
+    a.minstat = None;
     let mut warnings = Vec::new();
     let mut denoise_report = None;
     let mut noise_power = None;
@@ -583,14 +672,13 @@ pub fn process_file(
         noise_power = p.power;
         denoise_report = Some(rep);
     }
-
     if let Some(c) = &leveler {
         warnings.extend(leveler_warnings(c));
     }
     let leveler = leveler.map(LevelerStage::new);
 
     // ---- Pass 2: Lautheit nach Rauschreduktion und Leveler
-    let loudness_for_gain = if noise_power.is_some() || leveler.is_some() {
+    let measured = if noise_power.is_some() || leveler.is_some() {
         measure_pass(
             src.as_mut(),
             input,
@@ -603,34 +691,79 @@ pub fn process_file(
             cancel,
         )?
     } else {
-        // Ohne Bearbeitung vor dem Gain: Messen entfällt, Fortschritt trotzdem vollständig.
-        if analysis {
+        // Ohne Bearbeitung vor dem Gain gilt die Messung aus Pass 1.
+        if needs_analysis(settings) {
             progress.advance(id, Pass::Measure, total);
         }
-        a.loudness
+        a.meter.take().expect("Messung aus Pass 1")
     };
+    a.meter = None;
+    Ok(PreparedFile {
+        input: input.to_path_buf(),
+        busy: started.elapsed(),
+        a,
+        noise_power,
+        denoise_report,
+        leveler,
+        warnings,
+        measured,
+    })
+}
 
-    let gain_db = if settings.loudness.enabled {
-        match loudness_for_gain.integrated_lufs {
-            Some(i) => settings.loudness.target_lufs - i,
-            None => {
-                warnings.push(
-                    "Eingabe ist (nahezu) stumm; Lautheit nicht messbar, kein Normalisierungs-Gain"
-                        .into(),
-                );
-                0.0
-            }
-        }
-    } else {
-        0.0
+/// Normalisierungs-Gain aus gemessener Lautheit (mit Warnungen).
+fn normalization_gain(settings: &Settings, lufs: Option<f64>, warnings: &mut Vec<String>) -> f64 {
+    if !settings.loudness.enabled {
+        return 0.0;
+    }
+    let Some(i) = lufs else {
+        warnings.push(
+            "Eingabe ist (nahezu) stumm; Lautheit nicht messbar, kein Normalisierungs-Gain".into(),
+        );
+        return 0.0;
     };
+    let gain_db = settings.loudness.target_lufs - i;
     if gain_db > 20.0 {
         warnings.push(format!(
             "sehr hohe Anhebung um {gain_db:.1} dB; Restrauschen wird entsprechend lauter"
         ));
     }
+    gain_db
+}
 
-    // ---- Pass 3: Rendern
+/// Wirkung der Rauschreduktion, gemessen beim Rendern.
+struct DenoiseOut {
+    pause_in: Option<f64>,
+    pause_out: Option<f64>,
+    att_pauses: Option<f64>,
+    att_speech: Option<f64>,
+}
+
+struct RenderOut {
+    meter: LoudnessMeter,
+    limiter: Option<LimiterReport>,
+    clipped: u64,
+    denoise: Option<DenoiseOut>,
+    out_format: SampleFormat,
+    delta: Option<PathBuf>,
+}
+
+/// Pass 3: rendert mit festem Gain nach `<ausgabe>.partial` und benennt erst
+/// nach Erfolg um. Bei Fehler oder Abbruch werden Teildateien gelöscht.
+#[allow(clippy::too_many_arguments)]
+fn render_pass(
+    prep: &PreparedFile,
+    output: &Path,
+    settings: &Settings,
+    with_delta: bool,
+    gain_db: f64,
+    id: usize,
+    progress: &dyn ProgressSink,
+    cancel: &CancelToken,
+) -> Result<RenderOut> {
+    let a = &prep.a;
+    let d = &settings.denoise;
+    let input = prep.input.as_path();
+    let mut src = open(input)?;
     let out_spec = resolve_output_spec(a.spec, settings.output.bit_depth);
     let ch = a.spec.channels as usize;
     let dither_on = match settings.output.dither {
@@ -639,7 +772,10 @@ pub fn process_file(
         DitherMode::Off => false,
     };
     let mut dither = dither_on.then(|| TpdfDither::new(ch, out_spec.format.bits()));
-    let mut stage = noise_power.as_ref().map(|p| new_denoise_stage(&a, p, d));
+    let mut stage = prep
+        .noise_power
+        .as_ref()
+        .map(|p| new_denoise_stage(a, p, d));
     let mut limiter = settings.limiter.enabled.then(|| {
         TruePeakLimiter::new(
             ch,
@@ -656,7 +792,7 @@ pub fn process_file(
     let latency = dn_latency + limiter.as_ref().map_or(0, |l| l.latency()) as u64;
 
     let partial = with_suffix(output, ".partial");
-    let delta_final = (opts.export_delta && stage.is_some()).then(|| delta_path(output));
+    let delta_final = (with_delta && stage.is_some()).then(|| delta_path(output));
     let delta_partial = delta_final.as_ref().map(|p| with_suffix(p, ".partial"));
     let mut guard = PartialGuard {
         paths: std::iter::once(partial.clone())
@@ -684,6 +820,7 @@ pub fn process_file(
     let mut meter = LoudnessMeter::new(ch, a.spec.sample_rate).map_err(analysis_err)?;
 
     let gain = db_to_lin(gain_db) as f32;
+    let leveler = prep.leveler.as_ref();
     let mut den_buf = vec![Vec::with_capacity(BLOCK_FRAMES); ch];
     let mut lim_buf = vec![Vec::with_capacity(BLOCK_FRAMES); ch];
     let mut dry_buf = vec![Vec::with_capacity(BLOCK_FRAMES); ch];
@@ -720,7 +857,7 @@ pub fn process_file(
                     ds.write(&delta, take).map_err(audio_err(output))?;
                 }
             }
-            if let Some(l) = leveler.as_ref() {
+            if let Some(l) = leveler {
                 l.apply(cur, n, fed as i64 - dn_latency as i64);
             }
             apply_gain(cur, n, gain);
@@ -763,53 +900,358 @@ pub fn process_file(
     }
     rename(&partial, output)?;
     guard.armed = false;
+
+    Ok(RenderOut {
+        meter,
+        limiter: limiter.map(|l| {
+            let s = l.stats();
+            LimiterReport {
+                max_gain_reduction_db: s.max_reduction_db(),
+                limited_fraction: s.limited_fraction(),
+            }
+        }),
+        clipped,
+        denoise: stage.map(|st| {
+            let (pause_in, pause_out) = st.pause_levels_db();
+            DenoiseOut {
+                pause_in,
+                pause_out,
+                att_pauses: st.stats.attenuation_pauses_db(),
+                att_speech: st.stats.attenuation_speech_db(),
+            }
+        }),
+        out_format: out_spec.format,
+        delta: delta_final,
+    })
+}
+
+/// Fertig gerenderte Datei: Report und Ausgangsmessung (für den Album-Modus).
+struct RenderedFile {
+    report: FileReport,
+    meter: LoudnessMeter,
+}
+
+/// Pass 3 mit festem Gain; mit `correct` folgt bei einer Abweichung vom Ziel
+/// über 0,5 LU (Limiter) **eine** Korrekturiteration mit angepasstem Gain.
+#[allow(clippy::too_many_arguments)]
+fn render(
+    prep: &PreparedFile,
+    output: &Path,
+    settings: &Settings,
+    opts: &JobOptions,
+    gain_db: f64,
+    correct: bool,
+    mut warnings: Vec<String>,
+    id: usize,
+    progress: &dyn ProgressSink,
+    cancel: &CancelToken,
+) -> Result<RenderedFile> {
+    let started = Instant::now();
+    let mut gain_db = gain_db;
+    let mut out = render_pass(
+        prep,
+        output,
+        settings,
+        opts.export_delta,
+        gain_db,
+        id,
+        progress,
+        cancel,
+    )?;
+    let mut loudness_out = out.meter.stats().map_err(analysis_err)?;
+    let target = settings.loudness.target_lufs;
+    let mut corr = Corrector::new(target, gain_db);
+    if correct && settings.loudness.enabled && settings.limiter.enabled {
+        while let Some(i) = loudness_out.integrated_lufs {
+            let Some(next) = corr.next(gain_db, i) else {
+                break;
+            };
+            progress.pass_added(id, prep.a.frames);
+            gain_db = next;
+            // Das Delta-WAV hängt nicht vom Gain ab und bleibt aus dem ersten Durchlauf.
+            let delta_path = out.delta.take();
+            out = render_pass(prep, output, settings, false, gain_db, id, progress, cancel)?;
+            out.delta = delta_path;
+            loudness_out = out.meter.stats().map_err(analysis_err)?;
+        }
+    }
+    let correction = corr.correction(gain_db);
     progress.file_finished(id);
 
-    if clipped > 0 {
-        warnings.push(format!("{clipped} Samples beim Quantisieren begrenzt"));
+    if out.clipped > 0 {
+        warnings.push(format!(
+            "{} Samples beim Quantisieren begrenzt",
+            out.clipped
+        ));
     }
-    let loudness_out = meter.stats().map_err(analysis_err)?;
-    if let (true, Some(i)) = (settings.loudness.enabled, loudness_out.integrated_lufs) {
-        let dev = i - settings.loudness.target_lufs;
-        if dev.abs() > 0.5 {
+    if let (true, Some(i)) = (
+        correct && settings.loudness.enabled,
+        loudness_out.integrated_lufs,
+    ) {
+        let dev = i - target;
+        if dev.abs() > CORRECTION_THRESHOLD_LU {
             warnings.push(format!(
                 "Ziel-Lautheit um {dev:+.1} LU verfehlt (Limiter greift stark ein)"
             ));
         }
     }
 
-    if let (Some(rep), Some(st)) = (denoise_report.as_mut(), stage.as_ref()) {
-        let (pin, pout) = st.pause_levels_db();
-        rep.pause_level_in_dbfs = pin;
-        rep.pause_level_out_dbfs = pout;
-        rep.attenuation_pauses_db = st.stats.attenuation_pauses_db();
-        rep.attenuation_speech_db = st.stats.attenuation_speech_db();
-        rep.delta_path = delta_final.clone();
+    let mut denoise_report = prep.denoise_report.clone();
+    if let (Some(rep), Some(dn)) = (denoise_report.as_mut(), &out.denoise) {
+        rep.pause_level_in_dbfs = dn.pause_in;
+        rep.pause_level_out_dbfs = dn.pause_out;
+        rep.attenuation_pauses_db = dn.att_pauses;
+        rep.attenuation_speech_db = dn.att_speech;
+        rep.delta_path = out.delta.clone();
     }
 
-    let mut report = base_report(input, &a, started, warnings);
+    let mut all = prep.warnings.clone();
+    all.append(&mut warnings);
+    let mut report = base_report(&prep.input, &prep.a, prep.busy + started.elapsed(), all);
     report.denoise = denoise_report;
-    report.leveler = leveler.map(|l| l.curve().stats);
+    report.leveler = prep.leveler.as_ref().map(|l| l.curve().stats);
     report.normalization_gain_db = Some(gain_db);
-    report.limiter = limiter.map(|l| {
-        let s = l.stats();
-        LimiterReport {
-            max_gain_reduction_db: s.max_reduction_db(),
-            limited_fraction: s.limited_fraction(),
-        }
-    });
+    report.loudness_correction_db = correction;
+    report.limiter = out.limiter;
     report.output = Some(OutputInfo {
         path: output.to_path_buf(),
-        format: out_spec.format.label().to_string(),
-        clipped_samples: clipped,
+        format: out.out_format.label().to_string(),
+        clipped_samples: out.clipped,
     });
     report.loudness_out = Some(loudness_out);
-    Ok(report)
+    Ok(RenderedFile {
+        report,
+        meter: out.meter,
+    })
+}
+
+/// Komplette Verarbeitung einer Datei: analysieren, entrauschen, leveln,
+/// normalisieren, limitieren, schreiben (Lautheit pro Datei).
+///
+/// Geschrieben wird zuerst `<ausgabe>.partial`, erst nach Erfolg wird
+/// umbenannt. Bei Fehler oder Abbruch werden Teildateien gelöscht.
+pub fn process_file(
+    input: &Path,
+    output: &Path,
+    settings: &Settings,
+    opts: &JobOptions,
+    id: usize,
+    progress: &dyn ProgressSink,
+    cancel: &CancelToken,
+) -> Result<FileReport> {
+    let frames = open(input)?.total_frames();
+    progress.file_started(id, frames, prepare_passes(settings) + 1);
+    let prep = prepare(input, settings, opts, id, progress, cancel)?;
+    let mut warnings = Vec::new();
+    let gain = normalization_gain(settings, prep.loudness_lufs(), &mut warnings);
+    let r = render(
+        &prep, output, settings, opts, gain, true, warnings, id, progress, cancel,
+    )?;
+    Ok(r.report)
+}
+
+/// Album-Modus: Ergebnis aller Dateien und gemeinsame Werte.
+pub struct AlbumOutcome {
+    /// In Eingabereihenfolge.
+    pub files: Vec<Result<FileReport>>,
+    pub album: AlbumReport,
+}
+
+/// Album-Modus: **ein** Gain für alle Dateien, sodass die gemeinsame
+/// integrierte Lautheit das Ziel trifft; relative Unterschiede bleiben.
+///
+/// Ablauf: Pass 1 und 2 für alle Dateien (parallel) → Barriere → gemeinsamer
+/// Gain → Pass 3 für alle. Verfehlt die Album-Lautheit der Ausgabe das Ziel um
+/// mehr als 0,5 LU (Limiter), werden alle Dateien einmal mit korrigiertem
+/// gemeinsamem Gain neu gerendert. Dateien mit Fehler zählen nicht mit.
+pub fn process_album(
+    items: Vec<(PathBuf, PathBuf)>,
+    settings: &Settings,
+    opts: &JobOptions,
+    jobs: usize,
+    progress: &dyn ProgressSink,
+    cancel: &CancelToken,
+) -> AlbumOutcome {
+    let n = items.len();
+    let prepared: Vec<Result<PreparedFile>> = run_batch(items.iter().collect(), jobs, |id, it| {
+        let frames = open(&it.0)?.total_frames();
+        progress.file_started(id, frames, prepare_passes(settings));
+        let r = prepare(&it.0, settings, opts, id, progress, cancel);
+        progress.file_finished(id);
+        r
+    });
+
+    let ok: Vec<&PreparedFile> = prepared.iter().filter_map(|p| p.as_ref().ok()).collect();
+    let mut album_warnings = Vec::new();
+    let loudness_in = if ok.is_empty() || cancel.is_cancelled() {
+        None
+    } else {
+        LoudnessMeter::integrated_multiple(ok.iter().map(|p| &p.measured))
+            .ok()
+            .flatten()
+    };
+    let mut gain_db = normalization_gain(settings, loudness_in, &mut album_warnings);
+    if ok.len() < n && !cancel.is_cancelled() {
+        album_warnings.push(format!(
+            "{} von {n} Dateien fehlgeschlagen; sie zählen nicht zur Album-Lautheit",
+            n - ok.len()
+        ));
+    }
+
+    let render_all = |gain_db: f64, files: &[Option<RenderedFile>]| {
+        run_batch(
+            (0..n).collect::<Vec<_>>(),
+            jobs,
+            |id, i| -> Option<Result<RenderedFile>> {
+                // Nach der Korrektur nur neu rendern, was beim ersten Mal gelang.
+                if !files.is_empty() && files[i].is_none() {
+                    return None;
+                }
+                let prep = prepared[i].as_ref().ok()?;
+                if cancel.is_cancelled() {
+                    return Some(Err(PipelineError::Cancelled));
+                }
+                progress.file_started(id, prep.a.frames, 1);
+                Some(render(
+                    prep,
+                    &items[i].1,
+                    settings,
+                    &JobOptions {
+                        export_delta: opts.export_delta && files.is_empty(),
+                        ..opts.clone()
+                    },
+                    gain_db,
+                    false,
+                    Vec::new(),
+                    id,
+                    progress,
+                    cancel,
+                ))
+            },
+        )
+    };
+
+    let measure_out = |r: &[Option<Result<RenderedFile>>]| {
+        let meters: Vec<&LoudnessMeter> = r
+            .iter()
+            .filter_map(|x| x.as_ref()?.as_ref().ok())
+            .map(|f| &f.meter)
+            .collect();
+        if meters.is_empty() {
+            None
+        } else {
+            LoudnessMeter::integrated_multiple(meters.into_iter())
+                .ok()
+                .flatten()
+        }
+    };
+    let mut rendered = render_all(gain_db, &[]);
+    let mut loudness_out = measure_out(&rendered);
+    let target = settings.loudness.target_lufs;
+    let mut corr = Corrector::new(target, gain_db);
+    while settings.loudness.enabled && settings.limiter.enabled && !cancel.is_cancelled() {
+        let Some(next) = loudness_out.and_then(|i| corr.next(gain_db, i)) else {
+            break;
+        };
+        gain_db = next;
+        let prev: Vec<Option<RenderedFile>> = rendered
+            .into_iter()
+            .map(|r| r.and_then(|r| r.ok()))
+            .collect();
+        let again = render_all(gain_db, &prev);
+        // Delta-WAV-Pfade und bisherige Render-Zeit übernehmen.
+        rendered = again
+            .into_iter()
+            .zip(prev)
+            .enumerate()
+            .map(|(i, (s, f))| {
+                let busy = prepared[i].as_ref().map_or(0.0, |p| p.busy.as_secs_f64());
+                s.map(|r| {
+                    r.map(|mut r| {
+                        if let Some(f) = f {
+                            r.report.elapsed_s += f.report.elapsed_s - busy;
+                            if let (Some(a), Some(b)) =
+                                (r.report.denoise.as_mut(), f.report.denoise)
+                            {
+                                a.delta_path = b.delta_path;
+                            }
+                        }
+                        r
+                    })
+                })
+            })
+            .collect();
+        loudness_out = measure_out(&rendered);
+    }
+    let correction = corr.correction(gain_db);
+    if let (true, Some(i)) = (settings.loudness.enabled, loudness_out) {
+        let dev = i - target;
+        if dev.abs() > CORRECTION_THRESHOLD_LU {
+            album_warnings.push(format!(
+                "Album-Lautheit um {dev:+.1} LU verfehlt (Limiter greift stark ein)"
+            ));
+        }
+    }
+
+    let files: Vec<Result<FileReport>> = prepared
+        .into_iter()
+        .zip(rendered)
+        .map(|(p, r)| match (p, r) {
+            (Err(e), _) => Err(e),
+            (Ok(_), Some(r)) => r.map(|r| r.report),
+            (Ok(_), None) => Err(PipelineError::Cancelled),
+        })
+        .collect();
+    let rendered_files = files.iter().filter(|f| f.is_ok()).count();
+    AlbumOutcome {
+        files,
+        album: AlbumReport {
+            files: rendered_files,
+            loudness_before_gain_lufs: loudness_in,
+            gain_db: settings.loudness.enabled.then_some(gain_db),
+            loudness_correction_db: correction,
+            loudness_out_lufs: loudness_out,
+            warnings: album_warnings,
+        },
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::span;
+    use super::{Corrector, span};
+
+    /// Modell eines Limiters: oberhalb von −18 LUFS wirkt jedes dB Gain nur halb.
+    fn limited(gain: f64) -> f64 {
+        let l = -26.0 + gain;
+        if l > -18.0 {
+            -18.0 + (l + 18.0) * 0.5
+        } else {
+            l
+        }
+    }
+
+    #[test]
+    fn corrector_converges_with_compression() {
+        let mut gain = 10.0; // ideal ohne Limiter: −16
+        let mut c = Corrector::new(-16.0, gain);
+        let mut renders = 1;
+        while let Some(g) = c.next(gain, limited(gain)) {
+            gain = g;
+            renders += 1;
+        }
+        let out = limited(gain);
+        assert!(
+            (out + 16.0).abs() <= 0.5,
+            "{out:.2} nach {renders} Durchläufen"
+        );
+        assert!(renders <= 3);
+        assert!(c.correction(gain).unwrap() > 0.0);
+
+        // Treffer im ersten Durchlauf: keine Iteration.
+        let mut c = Corrector::new(-16.0, 5.0);
+        assert_eq!(c.next(5.0, -16.3), None);
+        assert_eq!(c.correction(5.0), None);
+    }
 
     #[test]
     fn span_alignment() {

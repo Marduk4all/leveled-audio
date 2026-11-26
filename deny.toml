@@ -12,6 +12,7 @@ yanked = "deny"
 version = 2
 allow = [
     "MIT",
+    "MIT-0",           # borrow-or-share (nur Test-Abhängigkeit jsonschema)
     "Apache-2.0",
     "Unicode-3.0",
     "Zlib",

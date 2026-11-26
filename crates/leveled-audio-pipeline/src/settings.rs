@@ -172,6 +172,18 @@ pub struct LoudnessSettings {
     pub enabled: bool,
     /// Ziel-Lautheit in LUFS.
     pub target_lufs: f64,
+    /// Jede Datei einzeln oder ein gemeinsamer Gain für alle (Album).
+    pub mode: LoudnessMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LoudnessMode {
+    /// Jede Datei trifft das Ziel.
+    PerFile,
+    /// Ein gemeinsamer Gain; die Album-Lautheit trifft das Ziel, relative
+    /// Unterschiede zwischen den Dateien bleiben erhalten.
+    Album,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -225,6 +237,7 @@ impl Default for LoudnessSettings {
         LoudnessSettings {
             enabled: true,
             target_lufs: -16.0,
+            mode: LoudnessMode::PerFile,
         }
     }
 }
@@ -250,6 +263,20 @@ impl Default for OutputSettings {
     }
 }
 
+/// Version des Preset-Formats.
+pub const PRESET_SCHEMA_VERSION: i64 = 1;
+
+fn merge(base: &mut toml::Table, patch: toml::Table) {
+    for (k, v) in patch {
+        match (base.get_mut(&k), v) {
+            (Some(toml::Value::Table(b)), toml::Value::Table(p)) => merge(b, p),
+            (_, v) => {
+                base.insert(k, v);
+            }
+        }
+    }
+}
+
 /// Namen der eingebauten Presets.
 pub const PRESET_NAMES: [&str; 3] = ["podcast-stereo", "podcast-mono", "ebu-r128"];
 
@@ -266,12 +293,97 @@ impl Settings {
             denoise: DenoiseSettings::default(),
             leveler: LevelerSettings::default(),
             loudness: LoudnessSettings {
-                enabled: true,
                 target_lufs: target,
+                ..LoudnessSettings::default()
             },
             limiter: LimiterSettings::default(),
             output: OutputSettings::default(),
         })
+    }
+
+    /// Preset-Datei (TOML) laden und schichten: eingebautes Basis-Preset
+    /// (`base`, Default `podcast-stereo`) ← Werte aus der Datei. Die Datei darf
+    /// unvollständig sein; unbekannte Schlüssel sind ein Fehler.
+    ///
+    /// Metadaten auf oberster Ebene: `schema_version` (muss 1 sein), `name`, `base`.
+    pub fn from_preset_toml(text: &str) -> std::result::Result<Settings, String> {
+        let mut table: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
+        match table.remove("schema_version") {
+            None => {}
+            Some(toml::Value::Integer(v)) if v == PRESET_SCHEMA_VERSION => {}
+            Some(v) => {
+                return Err(format!(
+                    "schema_version = {v} wird nicht unterstützt (erwartet {PRESET_SCHEMA_VERSION})"
+                ));
+            }
+        }
+        match table.remove("name") {
+            None | Some(toml::Value::String(_)) => {}
+            Some(_) => return Err("name muss ein Text sein".into()),
+        }
+        let base = match table.remove("base") {
+            None => "podcast-stereo".to_string(),
+            Some(toml::Value::String(b)) => b,
+            Some(_) => return Err("base muss ein Text sein".into()),
+        };
+        let base = Settings::preset(&base).ok_or_else(|| {
+            format!(
+                "base = \"{base}\": unbekanntes Preset (eingebaut: {})",
+                PRESET_NAMES.join(", ")
+            )
+        })?;
+        base.layered(table)
+    }
+
+    /// Einzelnen Wert überschreiben, z. B. `denoise.reduction_db=15` oder
+    /// `loudness.mode=album`. Der Wert ist ein TOML-Wert; ohne Anführungszeichen
+    /// wird er als Text genommen, wenn er sonst nicht lesbar ist.
+    pub fn apply_override(&mut self, assignment: &str) -> std::result::Result<(), String> {
+        let (key, value) = assignment
+            .split_once('=')
+            .ok_or_else(|| format!("„{assignment}“: erwartet SCHLÜSSEL=WERT"))?;
+        let key = key.trim();
+        let value = value.trim();
+        if key.is_empty() || key.split('.').any(str::is_empty) {
+            return Err(format!("„{assignment}“: ungültiger Schlüssel"));
+        }
+        let parsed = toml::from_str::<toml::Table>(&format!("v = {value}"))
+            .ok()
+            .and_then(|mut t| t.remove("v"))
+            .unwrap_or_else(|| toml::Value::String(value.to_string()));
+        let mut patch = toml::Table::new();
+        let parts: Vec<&str> = key.split('.').collect();
+        let mut cur = &mut patch;
+        for p in &parts[..parts.len() - 1] {
+            cur = cur
+                .entry(p.to_string())
+                .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+                .as_table_mut()
+                .expect("Tabelle");
+        }
+        cur.insert(parts[parts.len() - 1].to_string(), parsed);
+        *self = self
+            .layered(patch)
+            .map_err(|e| format!("--set {assignment}: {e}"))?;
+        Ok(())
+    }
+
+    /// Als vollständige Preset-Datei ausgeben (Vorlage für eigene Presets).
+    pub fn to_preset_toml(&self, name: &str) -> String {
+        let body = toml::to_string_pretty(self).expect("Settings sind serialisierbar");
+        format!(
+            "schema_version = {PRESET_SCHEMA_VERSION}\nname = {}\n\n{body}",
+            toml::Value::String(name.to_string())
+        )
+    }
+
+    /// `patch` rekursiv über diese Einstellungen legen.
+    fn layered(&self, patch: toml::Table) -> std::result::Result<Settings, String> {
+        let mut base = toml::Table::try_from(self).map_err(|e| e.to_string())?;
+        merge(&mut base, patch);
+        toml::Value::Table(base)
+            .try_into()
+            .map_err(|e: toml::de::Error| e.message().to_string())
     }
 
     /// Prüft Wertebereiche. Gibt eine Fehlermeldung für den Anwender zurück.
@@ -378,6 +490,71 @@ mod tests {
 
         let err = toml::from_str::<Settings>("[loudness]\ntarget_lfus = -19.0\n");
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn preset_layering() {
+        // Basis ebu-r128, nur zwei Werte geändert; der Rest kommt vom Basis-Preset.
+        let s = Settings::from_preset_toml(
+            "schema_version = 1\nname = \"funk\"\nbase = \"ebu-r128\"\n\
+             [denoise]\nreduction_db = 18.0\n[leveler]\nstrength = 0.3\n",
+        )
+        .unwrap();
+        let mut expected = Settings::preset("ebu-r128").unwrap();
+        expected.denoise.reduction_db = 18.0;
+        expected.leveler.strength = 0.3;
+        assert_eq!(s, expected);
+
+        // Ohne base: podcast-stereo.
+        let s = Settings::from_preset_toml("[loudness]\nmode = \"album\"\n").unwrap();
+        assert_eq!(s.loudness.mode, LoudnessMode::Album);
+        assert_eq!(s.loudness.target_lufs, -16.0);
+
+        // Danach --set: überschreibt Datei-Werte, Rest bleibt.
+        let mut s = Settings::from_preset_toml("[denoise]\nreduction_db = 18.0\n").unwrap();
+        s.apply_override("denoise.reduction_db=9").unwrap();
+        s.apply_override("loudness.mode = album").unwrap();
+        s.apply_override("output.bit_depth=\"24\"").unwrap();
+        s.apply_override("denoise.profile.statistic=median")
+            .unwrap();
+        assert_eq!(s.denoise.reduction_db, 9.0);
+        assert_eq!(s.loudness.mode, LoudnessMode::Album);
+        assert_eq!(s.output.bit_depth, BitDepth::I24);
+        assert_eq!(s.denoise.profile.statistic, StatisticSetting::Median);
+        assert_eq!(s.leveler, LevelerSettings::default());
+
+        // Ausgabe von `preset show` lässt sich wieder laden.
+        let text = Settings::preset("podcast-mono")
+            .unwrap()
+            .to_preset_toml("podcast-mono");
+        assert_eq!(
+            Settings::from_preset_toml(&text).unwrap(),
+            Settings::preset("podcast-mono").unwrap()
+        );
+    }
+
+    #[test]
+    fn preset_errors() {
+        let err = |t: &str| Settings::from_preset_toml(t).unwrap_err();
+        assert!(err("[denoise]\nreduction_dB = 3.0\n").contains("reduction_dB"));
+        assert!(err("[denose]\nenabled = false\n").contains("denose"));
+        assert!(err("tempo = 3\n").contains("tempo"));
+        assert!(err("schema_version = 2\n").contains("schema_version"));
+        assert!(err("base = \"radio\"\n").contains("radio"));
+        assert!(Settings::from_preset_toml("[loudness]\ntarget_lufs = \"laut\"\n").is_err());
+
+        let mut s = Settings::default();
+        let before = s.clone();
+        assert!(
+            s.apply_override("denoise.reduktion=3")
+                .unwrap_err()
+                .contains("reduktion")
+        );
+        assert!(s.apply_override("loudness.mode=radio").is_err());
+        assert!(s.apply_override("limiter.ceiling_dbtp").is_err());
+        assert!(s.apply_override("limiter..x=1").is_err());
+        assert!(s.apply_override("denoise=3").is_err());
+        assert_eq!(s, before, "fehlgeschlagenes --set ändert nichts");
     }
 
     #[test]

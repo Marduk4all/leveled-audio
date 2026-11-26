@@ -22,15 +22,18 @@ mod report;
 mod settings;
 
 pub use batch::run_batch;
-pub use job::{JobOptions, analyze_file, learn_profile, process_file, resolve_output_spec};
+pub use job::{
+    AlbumOutcome, JobOptions, analyze_file, learn_profile, process_album, process_file,
+    resolve_output_spec,
+};
 pub use leveled_audio_analysis::{LevelerStats, LoudnessStats, NoiseProfile, ProfileSource};
 pub use noise::{load_profile, save_profile};
 pub use progress::{CancelToken, NoProgress, Pass, ProgressSink};
-pub use report::{DenoiseReport, FileReport, InputInfo, LimiterReport, OutputInfo};
+pub use report::{AlbumReport, DenoiseReport, FileReport, InputInfo, LimiterReport, OutputInfo};
 pub use settings::{
     BitDepth, DenoiseSettings, DitherMode, FftSize, GainRuleSetting, LevelerSettings,
-    LimiterSettings, LoudnessSettings, OutputSettings, PRESET_NAMES, ProfileSettings, Settings,
-    StatisticSetting,
+    LimiterSettings, LoudnessMode, LoudnessSettings, OutputSettings, PRESET_NAMES,
+    PRESET_SCHEMA_VERSION, ProfileSettings, Settings, StatisticSetting,
 };
 
 use std::path::PathBuf;

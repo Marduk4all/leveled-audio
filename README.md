@@ -2,21 +2,30 @@
 
 Batch-Verarbeitung von Sprachaufnahmen (WAV) per Kommandozeile – offline, ohne Laufzeitabhängigkeiten.
 
-**Stand: Phase 3** – Rauschreduktion mit automatischem Rauschprofil, adaptiver Leveler,
-Loudness-Normalisierung (ITU-R BS.1770-4 / EBU R128) und True-Peak-Limiter, siehe [PLAN.md](PLAN.md).
+**Stand: Phase 4** – Rauschreduktion mit automatischem Rauschprofil, adaptiver Leveler,
+Loudness-Normalisierung (ITU-R BS.1770-4 / EBU R128, pro Datei oder als Album) und True-Peak-Limiter,
+Presets mit Schichtung, JSON-Report mit Schema, Release-Builds. Siehe [PLAN.md](PLAN.md).
+
+**Bedienungsanleitung:** [docs/ANLEITUNG.md](docs/ANLEITUNG.md) · **Report-Schema:** [docs/report.schema.json](docs/report.schema.json)
 
 Kette: Rauschreduktion → Leveler → Normalisierung → True-Peak-Limiter. Das Rauschprofil wird automatisch
 aus den leisesten stationären Sprechpausen jeder Datei bestimmt (Fallback: Minimum Statistics).
 Der Leveler gleicht unterschiedlich laute Sprecher und Phrasen an. Die Wechsel liegen in den Pausen,
 und Pausen werden nicht angehoben.
 
-## Bauen
+## Installation
+
+Fertige Binaries für macOS (Universal), Windows und Linux (statisch) hängen an jedem GitHub-Release,
+siehe [Anleitung, Abschnitt 1](docs/ANLEITUNG.md#1-installation). Selbst bauen:
 
 ```bash
 cargo build --release
 ```
 
 Das Binary liegt danach unter `target/release/leveled-audio`.
+
+Ein Release entsteht durch ein Tag: `git tag v0.1.0 && git push origin v0.1.0`. Der Workflow
+`.github/workflows/release.yml` baut dann alle Plattformen, prüft die Binaries und lädt sie mit `SHA256SUMS.txt` hoch.
 
 ## Benutzung
 
@@ -34,6 +43,13 @@ leveled-audio process aufnahmen/ -o fertig/ --export-delta --save-profiles profi
 leveled-audio profile learn raumton.wav -o studio.json
 leveled-audio process aufnahmen/ -o fertig/ --noise-profile studio.json
 
+# Album: ein gemeinsamer Gain, relative Unterschiede bleiben
+leveled-audio process staffel/ -o fertig/ --loudness-mode album
+
+# Eigenes Preset (fehlende Werte kommen vom Basis-Preset) und einzelne Overrides
+leveled-audio preset show ebu-r128 > mein.toml
+leveled-audio process aufnahmen/ -o fertig/ --preset mein.toml --set denoise.reduction_db=15
+
 # Leveler stärker (Default 60 %) oder ganz aus
 leveled-audio process interview.wav -o fertig/ --leveler-strength 90
 leveled-audio process interview.wav -o fertig/ --no-leveler
@@ -45,8 +61,6 @@ leveled-audio process interview.wav -o fertig/ --no-denoise
 # Nur messen (inkl. Rauschpegel und Profil-Konfidenz)
 leveled-audio analyze aufnahmen/*.wav
 
-# Eigenes Preset als Vorlage ausgeben
-leveled-audio preset show podcast-stereo > mein-preset.toml
 ```
 
 Wichtige Eigenschaften:

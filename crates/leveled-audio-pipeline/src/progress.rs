@@ -25,6 +25,8 @@ pub trait ProgressSink: Send + Sync {
     fn file_started(&self, _id: usize, _frames: u64, _passes: u32) {}
     /// `frames` weitere Frames im Durchgang `pass` verarbeitet.
     fn advance(&self, id: usize, pass: Pass, frames: u64);
+    /// Ein zusätzlicher Durchgang über `frames` Frames (Korrekturiteration).
+    fn pass_added(&self, _id: usize, _frames: u64) {}
     fn file_finished(&self, _id: usize) {}
 }
 

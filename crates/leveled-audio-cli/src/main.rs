@@ -10,13 +10,14 @@ use args::{Cli, Command, PresetCmd, ProcessArgs, ProfileCmd};
 use clap::Parser;
 use inputs::{Job, collect_inputs, plan_outputs};
 use leveled_audio_pipeline::{
-    CancelToken, JobOptions, NoProgress, PRESET_NAMES, ProgressSink, Settings, analyze_file,
-    learn_profile, load_profile, process_file, run_batch, save_profile,
+    AlbumReport, CancelToken, JobOptions, LoudnessMode, NoProgress, PRESET_NAMES, Pass,
+    ProgressSink, Settings, analyze_file, learn_profile, load_profile, process_album, process_file,
+    run_batch, save_profile,
 };
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use summary::{FileOutcome, print_summary, write_json};
+use summary::{FileOutcome, JsonMeta, print_album, print_summary, write_json};
 
 const EXIT_FAILURES: u8 = 1;
 const EXIT_USAGE: u8 = 2;
@@ -62,7 +63,8 @@ fn run(cli: Cli) -> Result<u8> {
     match cli.command {
         Command::Process(a) => cmd_process(a, cli.quiet),
         Command::Analyze(a) => {
-            let settings = load_settings(&a.preset)?;
+            let mut settings = load_settings(&a.preset)?;
+            apply_overrides(&mut settings, &a.overrides)?;
             let files = collect_inputs(&a.inputs, a.recursive)?;
             let cancel = install_ctrlc();
             let jobs = a.jobs.unwrap_or_else(default_jobs);
@@ -74,7 +76,12 @@ fn run(cli: Cli) -> Result<u8> {
                 FileOutcome::from_result(f.display, f.path, r)
             });
             ui.finish();
-            finish(&results, &cancel, a.json.as_deref(), None, cli.quiet)
+            let meta = JsonMeta {
+                command: "analyze",
+                settings: &settings,
+                album: None,
+            };
+            finish(&results, &cancel, a.json.as_deref(), meta, cli.quiet)
         }
         Command::Profile {
             cmd:
@@ -111,12 +118,22 @@ fn run(cli: Cli) -> Result<u8> {
                 PresetCmd::List => {
                     for name in PRESET_NAMES {
                         let s = Settings::preset(name).expect("Preset");
-                        println!("{name:<16} {:>6.1} LUFS", s.loudness.target_lufs);
+                        println!(
+                            "{name:<16} {:>6.1} LUFS  {:>5.1} dBTP",
+                            s.loudness.target_lufs, s.limiter.ceiling_dbtp
+                        );
                     }
+                    println!(
+                        "\nEigene Presets: `leveled-audio preset show <name> > mein.toml`, anpassen,\n\
+                         dann `--preset mein.toml`. Nicht genannte Werte kommen vom Basis-Preset (`base`)."
+                    );
                 }
                 PresetCmd::Show { name } => {
                     let s = load_settings(&name)?;
-                    print!("{}", toml::to_string_pretty(&s)?);
+                    let label = std::path::Path::new(&name)
+                        .file_stem()
+                        .map_or(name.clone(), |s| s.to_string_lossy().into_owned());
+                    print!("{}", s.to_preset_toml(&label));
                 }
             }
             Ok(0)
@@ -136,8 +153,12 @@ fn load_settings(preset: &str) -> Result<Settings> {
     {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("Preset-Datei {} lesen", path.display()))?;
-        let s: Settings = toml::from_str(&text)
+        let s = Settings::from_preset_toml(&text)
+            .map_err(anyhow::Error::msg)
             .with_context(|| format!("Preset-Datei {} fehlerhaft", path.display()))?;
+        s.validate()
+            .map_err(anyhow::Error::msg)
+            .with_context(|| format!("Preset-Datei {}", path.display()))?;
         return Ok(s);
     }
     bail!(
@@ -146,8 +167,45 @@ fn load_settings(preset: &str) -> Result<Settings> {
     )
 }
 
+/// `--set`-Overrides der Reihe nach anwenden.
+fn apply_overrides(settings: &mut Settings, overrides: &[String]) -> Result<()> {
+    for o in overrides {
+        settings.apply_override(o).map_err(anyhow::Error::msg)?;
+    }
+    settings.validate().map_err(anyhow::Error::msg)
+}
+
+/// Leitet Fortschrittsmeldungen mit umgerechneter Datei-ID weiter (Album-Modus
+/// zählt nur die zu verarbeitenden Dateien).
+struct MappedProgress<'a> {
+    inner: &'a dyn ProgressSink,
+    ids: Vec<usize>,
+}
+
+impl ProgressSink for MappedProgress<'_> {
+    fn file_started(&self, id: usize, frames: u64, passes: u32) {
+        self.inner.file_started(self.ids[id], frames, passes);
+    }
+    fn advance(&self, id: usize, pass: Pass, frames: u64) {
+        self.inner.advance(self.ids[id], pass, frames);
+    }
+    fn pass_added(&self, id: usize, frames: u64) {
+        self.inner.pass_added(self.ids[id], frames);
+    }
+    fn file_finished(&self, id: usize) {
+        self.inner.file_finished(self.ids[id]);
+    }
+}
+
 fn cmd_process(a: ProcessArgs, quiet: bool) -> Result<u8> {
     let mut settings = load_settings(&a.preset)?;
+    // Reihenfolge: Preset ← --set ← eigene Flags.
+    for o in &a.overrides {
+        settings.apply_override(o).map_err(anyhow::Error::msg)?;
+    }
+    if let Some(m) = a.loudness_mode {
+        settings.loudness.mode = m.into();
+    }
     if let Some(t) = a.target_lufs {
         settings.loudness.target_lufs = t;
     }
@@ -220,6 +278,19 @@ fn cmd_process(a: ProcessArgs, quiet: bool) -> Result<u8> {
     let jobs = a.jobs.unwrap_or_else(default_jobs);
     let names: Vec<String> = plan.iter().map(|j| j.display().to_string()).collect();
     let ui = ui::Progress::new(&names, quiet);
+    if settings.loudness.mode == LoudnessMode::Album {
+        let (results, album) = run_album(plan, &settings, &opts, jobs, &ui, &cancel);
+        ui.finish();
+        if !quiet {
+            print_album(&album);
+        }
+        let meta = JsonMeta {
+            command: "process",
+            settings: &settings,
+            album: Some(&album),
+        };
+        return finish(&results, &cancel, a.report_json.as_deref(), meta, quiet);
+    }
     let results = run_batch(plan, jobs, |id, job| {
         let outcome = match job {
             Job::Skip { input, output } => FileOutcome::skipped(input.display, input.path, output),
@@ -240,27 +311,78 @@ fn cmd_process(a: ProcessArgs, quiet: bool) -> Result<u8> {
         outcome
     });
     ui.finish();
-    finish(
-        &results,
-        &cancel,
-        a.report_json.as_deref(),
-        Some(&settings),
-        quiet,
-    )
+    let meta = JsonMeta {
+        command: "process",
+        settings: &settings,
+        album: None,
+    };
+    finish(&results, &cancel, a.report_json.as_deref(), meta, quiet)
+}
+
+/// Album-Modus: alle zu verarbeitenden Dateien gemeinsam; übersprungene
+/// Dateien zählen nicht zur Album-Lautheit.
+fn run_album(
+    plan: Vec<Job>,
+    settings: &Settings,
+    opts: &JobOptions,
+    jobs: usize,
+    ui: &ui::Progress,
+    cancel: &CancelToken,
+) -> (Vec<FileOutcome>, AlbumReport) {
+    let mut ids = Vec::new();
+    let mut items = Vec::new();
+    for (i, job) in plan.iter().enumerate() {
+        if let Job::Process { input, output } = job {
+            ids.push(i);
+            items.push((input.path.clone(), output.clone()));
+        }
+    }
+    let progress = MappedProgress { inner: ui, ids };
+    let outcome = process_album(items, settings, opts, jobs, &progress, cancel);
+    let mut reports = outcome.files.into_iter();
+    let mut album = outcome.album;
+    let skipped = plan
+        .iter()
+        .filter(|j| matches!(j, Job::Skip { .. }))
+        .count();
+    if skipped > 0 {
+        album.warnings.push(format!(
+            "{skipped} übersprungene Datei(en) zählen nicht zur Album-Lautheit"
+        ));
+    }
+    let results = plan
+        .into_iter()
+        .enumerate()
+        .map(|(id, job)| {
+            let o = match job {
+                Job::Skip { input, output } => {
+                    FileOutcome::skipped(input.display, input.path, output)
+                }
+                Job::Process { input, .. } => FileOutcome::from_result(
+                    input.display,
+                    input.path,
+                    reports.next().expect("ein Ergebnis je Datei"),
+                ),
+            };
+            ui.file_done(id);
+            o
+        })
+        .collect();
+    (results, album)
 }
 
 fn finish(
     results: &[FileOutcome],
     cancel: &CancelToken,
     json: Option<&std::path::Path>,
-    settings: Option<&Settings>,
+    meta: JsonMeta,
     quiet: bool,
 ) -> Result<u8> {
     if !quiet {
         print_summary(results);
     }
     if let Some(path) = json {
-        write_json(path, results, settings)?;
+        write_json(path, results, meta)?;
         if !quiet {
             eprintln!("JSON-Report: {}", path.display());
         }

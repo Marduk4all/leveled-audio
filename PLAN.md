@@ -334,6 +334,9 @@ Fallstricke:
 - **Album-Modus** (`--loudness-mode album`): Die ebur128-States aller Dateien aus Pass 2 werden mit `loudness_global_multiple` kombiniert, und **ein** Gain gilt für alle Dateien (relative Unterschiede bleiben). Default ist `per-file` (jede Datei trifft das Ziel).
 - Presets: `podcast-stereo` −16 LUFS, `podcast-mono` −19 LUFS, `ebu-r128` −23 LUFS, jeweils mit Ceiling −1 dBTP. `custom` per Option.
 - **Fallstrick:** Greift der Limiter stark ein, sinkt die integrierte Lautheit leicht unter das Ziel. Deshalb wird nach Pass 3 gemessen. Bei einer Abweichung > 0,5 LU folgt **eine** Korrekturiteration (erneuter Pass 3 mit angepasstem Gain), sonst eine Warnung im Report. Standardfall bei Sprache und −16 LUFS: kein zweiter Durchlauf.
+  - *Geändert in Phase 4:* **höchstens zwei** Korrekturiterationen. Die erste nimmt Steigung 1 an (Gain += Ziel − gemessen). Die zweite schätzt die Steigung aus beiden Messungen (Sekante, begrenzt auf 1–4 dB Gain je LU). Grund: Im Album-Modus liegt der gemeinsame Gain für eine schon laute Datei weit oben, und der Limiter flacht den Zusammenhang Gain → Lautheit stark ab. Gemessen kam eine Iteration auf −16,72 LUFS, zwei auf −16,18. Die Gesamtkorrektur ist auf ±6 dB begrenzt.
+  - Im Album-Modus wird die **Album**-Lautheit der Ausgabe korrigiert: Alle Dateien werden mit demselben neuen Gain neu gerendert, der Gain bleibt also für alle gleich.
+  - Das Delta-WAV hängt nicht vom Gain ab und wird nur im ersten Durchlauf geschrieben.
 
 ### 3.8 True-Peak-Limiter
 
@@ -561,7 +564,25 @@ Akzeptanzkriterien:
 - [x] Gesamtkette ≥ 50× Echtzeit pro Kern. *Gemessen: 68× bei 3 h Stereo 48 kHz, 104 MB Peak-RSS.*
 - [x] **Hörabnahme durch dich** (Gesprächsaufnahmen mit unterschiedlich lauten Sprechern).
 
-### Phase 4: Batch-Feinschliff, Reports, Presets, Release-Builds (≈ 1,5 Wochen)
+### Phase 4: Batch-Feinschliff, Reports, Presets, Release-Builds (≈ 1,5 Wochen) – umgesetzt, Release-Lauf auf GitHub offen
+
+> **Stand 2026-11-26:** Umgesetzt und lokal getestet (86 Tests, clippy sauber).
+> - **Presets:** Eine Preset-Datei schichtet sich auf ein eingebautes Basis-Preset (`base`, Default `podcast-stereo`). Danach folgen `--set` und die eigenen Flags. `schema_version` und `name` sind optional. `preset show` erzeugt eine wieder ladbare Datei.
+> - **JSON-Report:**
+>   - Neue Felder: `schema_version`, `command`, vollständige `settings`, `settings_hash` (FNV-1a 64 über die kanonische JSON-Form, keine kryptografische Prüfsumme), `summary` sowie `album` im Album-Modus.
+>   - Je Datei zusätzlich `loudness_correction_db`.
+>   - Schema: `docs/report.schema.json` (Draft 2020-12, streng: `additionalProperties: false`).
+> - **Album-Modus:** `prepare` (Pass 1+2) für alle Dateien parallel, dann die Barriere, dann `render` (Pass 3) für alle.
+>   - Bis zur Barriere bleiben je Datei VAD-Klassen, Rauschprofil und Leveler-Kurve im Speicher (≈ 10 MB je Stunde Audio). Die Feature-Arrays werden vorher verworfen.
+>   - Fehlerhafte und übersprungene Dateien zählen nicht zur Album-Lautheit (Warnung).
+> - **Release:** `.github/workflows/release.yml` (Tag `v*`). Lokal geprüft: aarch64/x86_64/Universal für macOS.
+>   - Das Universal-Binary läuft nativ und unter Rosetta.
+>   - Ausgaben von arm64 und x86_64 weichen um ≤ 3 LSB bei 24 bit ab (RMS-Differenz −150 dBFS), innerhalb der Toleranz aus 1.4.
+>   - Windows und Linux werden erst im GitHub-Lauf gebaut und geprüft (`dumpbin /dependents` bzw. `ldd`).
+> - **Doku:** `docs/ANLEITUNG.md` (Bedienungsanleitung), README aktualisiert.
+> - Nicht umgesetzt:
+>   - `-v/-vv` aus 4.1 (bisher kein Bedarf; die Hinweise stehen in Tabelle und Report).
+>   - Fuzzing des WAV-Header-Parsers (Risikotabelle, `cargo-fuzz`). Es braucht nightly und bleibt vorgemerkt.
 
 Lieferumfang:
 - TOML-Presets mit Schichtung, `preset list/show`, `--set`.
@@ -570,11 +591,12 @@ Lieferumfang:
 - README und Bedienungsanleitung.
 
 Akzeptanzkriterien:
-- [ ] Release-Artefakte laufen auf frischen Systemen ohne Zusatzinstallation (Windows ohne VC-Redist; `ldd` meldet unter Linux „statically linked“).
-- [ ] JSON-Report validiert gegen das Schema. Reihenfolge deterministisch.
-- [ ] Batch mit 100 Dateien: ein defekter Eingang bricht den Batch nicht ab (Exit 1, Report nennt den Fehler).
-- [ ] Album-Modus: alle Dateien erhalten denselben Gain, die Album-Lautheit trifft das Ziel bis ±0,5 LU.
-- [ ] Preset-Schichtung durch Tests abgedeckt, unbekannte Keys ergeben einen Fehler.
+- [ ] Release-Artefakte laufen auf frischen Systemen ohne Zusatzinstallation (Windows ohne VC-Redist; `ldd` meldet unter Linux „statically linked“). *macOS lokal geprüft (nur Systembibliotheken laut `otool -L`). Windows und Linux prüft der Workflow automatisch, er ist aber noch nicht gelaufen. Dafür braucht es ein GitHub-Repository und ein Tag.*
+- [x] JSON-Report validiert gegen das Schema. Reihenfolge deterministisch. *CLI-Test validiert Reports von process (pro Datei, Album, mit Skip, Fehler, Delta), analyze und dem 100er-Batch mit `jsonschema`. Gegenprobe: zusätzliche Felder und falsche Typen werden abgelehnt.*
+- [x] Batch mit 100 Dateien: ein defekter Eingang bricht den Batch nicht ab (Exit 1, Report nennt den Fehler). *99 ok, 1 Fehler mit Dateiname, 99 Ausgaben.*
+- [x] Album-Modus: alle Dateien erhalten denselben Gain, die Album-Lautheit trifft das Ziel bis ±0,5 LU. *Synthetisch, drei Dateien 11 dB auseinander: −16,18 LUFS (mit Limiter, zwei Korrekturen), ohne Limiter exakt. Deine Clips: −16,1 LUFS.*
+- [x] Preset-Schichtung durch Tests abgedeckt, unbekannte Keys ergeben einen Fehler. *Unit-Tests (Basis, Datei, `--set`, Roundtrip, Fehlerfälle) und CLI-Test (Reihenfolge Datei ← `--set` ← Flag, Exit 2 bei Tippfehlern).*
+- [x] Zusätzlich: Die Korrekturiteration behebt die Abweichung aus Phase 3. *Synthetischer Dialog −16,55 → −16,21 LUFS. Deine Clips 001 und 004 vorher −16,8/−16,6, jetzt −16,2/−16,1.*
 
 ### Später (vorgemerkt, Architektur bereits vorbereitet)
 

@@ -85,6 +85,18 @@ impl ProgressSink for Progress {
         self.bars.lock().expect("Mutex").insert(id, bar);
     }
 
+    fn pass_added(&self, id: usize, frames: u64) {
+        if let Some(bar) = self.bars.lock().expect("Mutex").get(&id) {
+            bar.inc_length(frames);
+        }
+    }
+
+    fn file_finished(&self, id: usize) {
+        if let Some(bar) = self.bars.lock().expect("Mutex").remove(&id) {
+            bar.finish_and_clear();
+        }
+    }
+
     fn advance(&self, id: usize, pass: Pass, frames: u64) {
         if let Some(bar) = self.bars.lock().expect("Mutex").get(&id) {
             bar.set_prefix(pass.label());

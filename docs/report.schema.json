@@ -1,0 +1,851 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "leveled-audio JSON-Report",
+  "description": "Report von `leveled-audio process --report-json` und `leveled-audio analyze --json`. Dateien stehen in Eingabereihenfolge. Werte, die ein Durchgang nicht ermittelt, sind null.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tool",
+    "version",
+    "command",
+    "settings",
+    "settings_hash",
+    "summary",
+    "files"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "tool": {
+      "const": "leveled-audio"
+    },
+    "version": {
+      "type": "string"
+    },
+    "command": {
+      "enum": [
+        "process",
+        "analyze"
+      ]
+    },
+    "settings": {
+      "$ref": "#/$defs/settings"
+    },
+    "settings_hash": {
+      "type": "string",
+      "pattern": "^fnv1a64:[0-9a-f]{16}$",
+      "description": "FNV-1a über die kanonische JSON-Form der Einstellungen; gleiche Prüfsumme = gleiche Verarbeitung."
+    },
+    "album": {
+      "$ref": "#/$defs/album"
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ok",
+        "skipped",
+        "errors",
+        "cancelled"
+      ],
+      "properties": {
+        "ok": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skipped": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "errors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cancelled": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/file_outcome"
+      }
+    }
+  },
+  "$defs": {
+    "loudness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "integrated_lufs",
+        "lra_lu",
+        "true_peak_dbtp",
+        "sample_peak_dbfs"
+      ],
+      "properties": {
+        "integrated_lufs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "lra_lu": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "true_peak_dbtp": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "sample_peak_dbfs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "description": "Lautheitsmessung (BS.1770-4 / EBU R128); null, wenn nicht definiert (z. B. Stille)."
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total",
+        "amount",
+        "separation",
+        "stationarity",
+        "spread"
+      ],
+      "properties": {
+        "total": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "amount": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "separation": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "stationarity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "spread": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "denoise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "skipped",
+        "profile_source",
+        "confidence",
+        "confidence_detail",
+        "profile_duration_s",
+        "pauses_used",
+        "noise_level_dbfs",
+        "speech_fraction",
+        "fft_size",
+        "gain_rule",
+        "reduction_db",
+        "pause_level_in_dbfs",
+        "pause_level_out_dbfs",
+        "attenuation_pauses_db",
+        "attenuation_speech_db",
+        "delta_path",
+        "profile_saved"
+      ],
+      "properties": {
+        "skipped": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "profile_source": {
+          "enum": [
+            "auto",
+            "minstat",
+            "imported",
+            null
+          ]
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "confidence_detail": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/confidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profile_duration_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "pauses_used": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "noise_level_dbfs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "speech_fraction": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "fft_size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gain_rule": {
+          "type": "string"
+        },
+        "reduction_db": {
+          "type": "number"
+        },
+        "pause_level_in_dbfs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pause_level_out_dbfs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "attenuation_pauses_db": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "attenuation_speech_db": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "delta_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "profile_saved": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "description": "Rauschreduktion: Profil und Wirkung."
+    },
+    "leveler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phrases",
+        "gated",
+        "reference_db",
+        "gain_min_db",
+        "gain_max_db",
+        "mean_abs_gain_db"
+      ],
+      "properties": {
+        "phrases": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gated": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reference_db": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "gain_min_db": {
+          "type": "number"
+        },
+        "gain_max_db": {
+          "type": "number"
+        },
+        "mean_abs_gain_db": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "description": "Adaptiver Leveler: Gain-Bereich in Sprache."
+    },
+    "limiter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_gain_reduction_db",
+        "limited_fraction"
+      ],
+      "properties": {
+        "max_gain_reduction_db": {
+          "type": "number",
+          "minimum": 0
+        },
+        "limited_fraction": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "file_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input_path",
+        "input",
+        "loudness_in",
+        "input_clip_runs",
+        "dc_offset_dbfs",
+        "denoise",
+        "leveler",
+        "normalization_gain_db",
+        "loudness_correction_db",
+        "limiter",
+        "output",
+        "loudness_out",
+        "warnings",
+        "elapsed_s",
+        "realtime_factor"
+      ],
+      "properties": {
+        "input_path": {
+          "type": "string"
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sample_rate",
+            "channels",
+            "format",
+            "frames",
+            "duration_s"
+          ],
+          "properties": {
+            "sample_rate": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "channels": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "format": {
+              "type": "string"
+            },
+            "frames": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "duration_s": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "loudness_in": {
+          "$ref": "#/$defs/loudness"
+        },
+        "input_clip_runs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dc_offset_dbfs": {
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "denoise": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/denoise"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "leveler": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/leveler"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "normalization_gain_db": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "loudness_correction_db": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "limiter": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/limiter"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "output": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "format",
+                "clipped_samples"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "format": {
+                  "type": "string"
+                },
+                "clipped_samples": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "loudness_out": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/loudness"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "elapsed_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "realtime_factor": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "file_outcome": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "input",
+            "status",
+            "report"
+          ],
+          "properties": {
+            "input": {
+              "type": "string"
+            },
+            "status": {
+              "const": "ok"
+            },
+            "report": {
+              "$ref": "#/$defs/file_report"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "input",
+            "status",
+            "output"
+          ],
+          "properties": {
+            "input": {
+              "type": "string"
+            },
+            "status": {
+              "const": "skipped"
+            },
+            "output": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "input",
+            "status"
+          ],
+          "properties": {
+            "input": {
+              "type": "string"
+            },
+            "status": {
+              "const": "cancelled"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "input",
+            "status",
+            "message"
+          ],
+          "properties": {
+            "input": {
+              "type": "string"
+            },
+            "status": {
+              "const": "error"
+            },
+            "message": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "album": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "files",
+        "loudness_before_gain_lufs",
+        "gain_db",
+        "loudness_correction_db",
+        "loudness_out_lufs",
+        "warnings"
+      ],
+      "properties": {
+        "files": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "loudness_before_gain_lufs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "gain_db": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "loudness_correction_db": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "loudness_out_lufs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Album-Modus: ein gemeinsamer Gain für alle Dateien."
+    },
+    "settings": {
+      "type": "object",
+      "description": "Effektive Einstellungen (Aufbau wie eine Preset-Datei, vollständig).",
+      "required": [
+        "denoise",
+        "leveler",
+        "loudness",
+        "limiter",
+        "output"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "denoise": {
+          "type": "object",
+          "required": [
+            "enabled",
+            "gain_rule",
+            "reduction_db",
+            "oversubtraction",
+            "floor",
+            "release_ms",
+            "freq_smooth_oct",
+            "fft_size",
+            "stereo_link",
+            "profile"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "gain_rule": {
+              "enum": [
+                "wiener-dd",
+                "subtract"
+              ]
+            },
+            "reduction_db": {
+              "type": "number"
+            },
+            "oversubtraction": {
+              "type": "number"
+            },
+            "floor": {
+              "type": "number"
+            },
+            "release_ms": {
+              "type": "number"
+            },
+            "freq_smooth_oct": {
+              "type": "number"
+            },
+            "fft_size": {
+              "oneOf": [
+                {
+                  "const": "auto"
+                },
+                {
+                  "enum": [
+                    512,
+                    1024,
+                    2048,
+                    4096,
+                    8192
+                  ]
+                }
+              ]
+            },
+            "stereo_link": {
+              "type": "boolean"
+            },
+            "profile": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "min_duration_s",
+                "target_duration_s",
+                "statistic",
+                "min_confidence"
+              ],
+              "properties": {
+                "min_duration_s": {
+                  "type": "number"
+                },
+                "target_duration_s": {
+                  "type": "number"
+                },
+                "statistic": {
+                  "enum": [
+                    "mean",
+                    "trimmed",
+                    "median"
+                  ]
+                },
+                "min_confidence": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "leveler": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "strength",
+            "max_boost_db",
+            "max_cut_db",
+            "pause_max_boost_db",
+            "slew_db_per_s"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "strength": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "max_boost_db": {
+              "type": "number"
+            },
+            "max_cut_db": {
+              "type": "number"
+            },
+            "pause_max_boost_db": {
+              "type": "number"
+            },
+            "slew_db_per_s": {
+              "type": "number"
+            }
+          }
+        },
+        "loudness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "target_lufs",
+            "mode"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "target_lufs": {
+              "type": "number"
+            },
+            "mode": {
+              "enum": [
+                "per-file",
+                "album"
+              ]
+            }
+          }
+        },
+        "limiter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "ceiling_dbtp",
+            "lookahead_ms",
+            "release_ms",
+            "oversampling"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "ceiling_dbtp": {
+              "type": "number"
+            },
+            "lookahead_ms": {
+              "type": "number"
+            },
+            "release_ms": {
+              "type": "number"
+            },
+            "oversampling": {
+              "enum": [
+                4,
+                8,
+                16
+              ]
+            }
+          }
+        },
+        "output": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bit_depth",
+            "dither"
+          ],
+          "properties": {
+            "bit_depth": {
+              "enum": [
+                "same",
+                "16",
+                "24",
+                "32f"
+              ]
+            },
+            "dither": {
+              "enum": [
+                "auto",
+                "on",
+                "off"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

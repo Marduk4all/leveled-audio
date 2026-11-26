@@ -1,5 +1,5 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use leveled_audio_pipeline::{BitDepth, GainRuleSetting};
+use leveled_audio_pipeline::{BitDepth, GainRuleSetting, LoudnessMode};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -69,9 +69,15 @@ pub struct ProcessArgs {
     /// Preset-Name (podcast-stereo, podcast-mono, ebu-r128) oder Pfad zu einer .toml-Datei
     #[arg(long, default_value = "podcast-stereo")]
     pub preset: String,
+    /// Einzelne Einstellung überschreiben, z. B. --set denoise.reduction_db=15 (mehrfach möglich)
+    #[arg(long = "set", value_name = "SCHLÜSSEL=WERT")]
+    pub overrides: Vec<String>,
     /// Ziel-Lautheit in LUFS (überschreibt das Preset)
     #[arg(long, allow_negative_numbers = true)]
     pub target_lufs: Option<f64>,
+    /// Lautheit pro Datei oder gemeinsamer Gain für alle Dateien (Album)
+    #[arg(long, value_enum)]
+    pub loudness_mode: Option<LoudnessModeArg>,
     /// True-Peak-Ceiling in dBTP (überschreibt das Preset)
     #[arg(long, allow_negative_numbers = true)]
     pub ceiling_dbtp: Option<f64>,
@@ -136,6 +142,9 @@ pub struct AnalyzeArgs {
     /// Preset für die Analyseparameter
     #[arg(long, default_value = "podcast-stereo")]
     pub preset: String,
+    /// Einzelne Einstellung überschreiben (wie bei process)
+    #[arg(long = "set", value_name = "SCHLÜSSEL=WERT")]
+    pub overrides: Vec<String>,
     /// Ordner rekursiv durchsuchen
     #[arg(short, long)]
     pub recursive: bool,
@@ -183,6 +192,23 @@ impl From<GainRuleArg> for GainRuleSetting {
         match g {
             GainRuleArg::WienerDd => GainRuleSetting::WienerDd,
             GainRuleArg::Subtract => GainRuleSetting::Subtract,
+        }
+    }
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub enum LoudnessModeArg {
+    /// Jede Datei trifft das Ziel
+    PerFile,
+    /// Ein Gain für alle Dateien; die gemeinsame Lautheit trifft das Ziel
+    Album,
+}
+
+impl From<LoudnessModeArg> for LoudnessMode {
+    fn from(m: LoudnessModeArg) -> Self {
+        match m {
+            LoudnessModeArg::PerFile => LoudnessMode::PerFile,
+            LoudnessModeArg::Album => LoudnessMode::Album,
         }
     }
 }

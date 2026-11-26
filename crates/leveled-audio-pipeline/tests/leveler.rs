@@ -225,16 +225,22 @@ fn full_chain_with_leveler_hits_target() {
     assert!((i + 16.0).abs() <= 0.1, "ohne Limiter {i:.2} LUFS");
 
     // Volle Kette: True Peak eingehalten. Die synthetische Stimme ist sehr
-    // spitz (Limiter ≈ 30 % der Zeit aktiv), daher verliert sie etwas Lautheit;
-    // die Korrekturiteration dafür folgt in Phase 4.
+    // spitz (Limiter ≈ 30 % der Zeit aktiv) und verliert im ersten Durchlauf
+    // ≈ 0,55 LU; die Korrekturiteration bringt sie in die Toleranz.
     let r = run(&input, &out, &Settings::default());
     let o = r.loudness_out.unwrap();
     let i = o.integrated_lufs.unwrap();
     eprintln!(
-        "{i:.2} LUFS, Limiter {:?}, Leveler {:?}",
-        r.limiter, r.leveler
+        "{i:.2} LUFS, Korrektur {:?}, Limiter {:?}, Leveler {:?}",
+        r.loudness_correction_db, r.limiter, r.leveler
     );
-    assert!((i + 16.0).abs() <= 1.0, "{i:.2} LUFS");
+    assert!((i + 16.0).abs() <= 0.5, "{i:.2} LUFS");
+    assert!(r.loudness_correction_db.is_some_and(|c| c > 0.0));
+    assert!(
+        r.warnings.iter().all(|w| !w.contains("verfehlt")),
+        "{:?}",
+        r.warnings
+    );
     assert!(o.true_peak_dbtp.unwrap() <= -1.0);
     let lev = r.leveler.unwrap();
     assert!(lev.phrases >= 6, "{} Phrasen", lev.phrases);
