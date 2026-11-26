@@ -1,0 +1,48 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.100"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+leveled-audio-dsp = { path = "crates/leveled-audio-dsp" }
+leveled-audio-analysis = { path = "crates/leveled-audio-analysis" }
+leveled-audio-io = { path = "crates/leveled-audio-io" }
+leveled-audio-pipeline = { path = "crates/leveled-audio-pipeline" }
+leveled-audio-testkit = { path = "crates/leveled-audio-testkit" }
+
+ebur128 = "0.1.11"
+rayon = "1.12"
+clap = { version = "4.6", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "1.2"
+indicatif = "0.18"
+thiserror = "2.0"
+anyhow = "1.0"
+ctrlc = "3.5"
+hound = "3.5"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+# DSP-Code arbeitet bewusst mit Index-Schleifen und Float-Casts.
+needless_range_loop = "allow"
+cast_lossless = "allow"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
+# DSP-Tests verarbeiten Minuten an Audio; ohne Optimierung dauern sie zu lange.
+[profile.test]
+opt-level = 2
+
+[profile.dev.package."*"]
+opt-level = 2

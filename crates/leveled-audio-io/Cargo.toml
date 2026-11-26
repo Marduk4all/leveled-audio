@@ -1,0 +1,17 @@
+[package]
+name = "leveled-audio-io"
+description = "WAV/RF64 lesen und schreiben"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
+hound.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,19 @@
+[package]
+name = "leveled-audio-analysis"
+description = "Analyse: Lautheit (BS.1770/R128), später VAD und Rauschprofil"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ebur128.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+leveled-audio-testkit.workspace = true
+
+[lints]
+workspace = true

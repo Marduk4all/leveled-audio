@@ -1,0 +1,11 @@
+[package]
+name = "leveled-audio-dsp"
+description = "DSP-Bausteine (ohne I/O): Oversampling, True-Peak-Limiter, Dither"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
