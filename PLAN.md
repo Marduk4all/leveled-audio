@@ -301,13 +301,17 @@ Weil VAD und Frame-Energien der ganzen Datei nach Pass 1 vorliegen, wird die Gai
 
 1. **Sprechenergie:** `E_k` (K-gewichtet) minus die K-gewichtete Profilleistung (Leistungssubtraktion auf Frame-Ebene, Untergrenze −70 dB). Damit wirkt der Leveler auf den Sprachanteil, auch wenn Denoise erst später greift.
 2. **Phrasen:** VAD-Sprachsegmente. Lücken < 250 ms werden geschlossen. Segmente < 300 ms übernehmen den Wert des Nachbarn. Lange Segmente (> 6 s) werden intern mit einem gleitenden 3-s-Fenster gemessen.
-3. **Referenz:** `L_ref` = dauergewichteter Median der Segmentlautheiten der Datei. Leise Sprecher werden angehoben, laute abgesenkt, symmetrisch. Die absolute Lage ist egal, weil die Normalisierung folgt.
+3. **Referenz:** `L_ref` = Mitte zwischen unterem und oberem Quartil der Segmentlautheiten (dauergewichtet). Leise Sprecher werden angehoben, laute abgesenkt, symmetrisch. Die absolute Lage ist egal, weil die Normalisierung folgt.
+   - *Geändert in Phase 3:* Ursprünglich Median. Bei zwei Sprechern mit je ≈ 50 % Sprechzeit fällt der Median zufällig in einen der beiden Cluster. Dann bekommt ein Sprecher die volle Korrektur und läuft in `max_cut`/`max_boost` (gemessen: −10…+5 dB statt ±5 dB). Die Quartilsmitte ist bei einem Sprecher ≈ Median und bei zwei Sprechern symmetrisch.
+   - *Neu in Phase 3:* **Gate.** Phrasen mehr als 20 dB unter `L_ref` (Atmer, Raumgeräusch, fernes Gemurmel) werden wie Pausen behandelt. An deiner Aufnahme 005 hob der Leveler sonst einen leisen Ausklang (≈ 22 dB unter der Sprache) um die vollen +10 dB an.
 4. **Soll-Gain:** `g = strength · (L_ref − L_seg)`, begrenzt auf `[−max_cut, +max_boost]`.
 5. **Übergänge:** Gain-Wechsel liegen bevorzugt **in Pausen** (Rampe 250 ms, die vor dem Sprachbeginn endet). Ist die Pause zu kurz, wird über die Grenze geführt, mit Slew-Limit. Innerhalb einer Phrase gilt ein Slew-Limit von 2 dB/s.
 6. **Pausen nicht anheben:**
    - Kurze Pausen (< 2 s) halten bzw. interpolieren den Gain. Ein Absenken in jeder kurzen Pause würde den Rauschteppich „atmen“ lassen, was schlimmer ist.
    - Lange Pausen (≥ 2 s) gleiten langsam (500 ms) auf `min(g, pause_max_boost_db)` und sind rechtzeitig vor der nächsten Phrase wieder oben.
-7. **Glättung:** Zum Schluss nullphasige Ein-Pol-Glättung (vorwärts und rückwärts, τ = 150 ms) der Kurve. Angewendet wird pro Sample mit linearer Interpolation zwischen Frame-Stützstellen.
+7. **Glättung:** Nullphasige Ein-Pol-Glättung (vorwärts und rückwärts, τ = 150 ms) innerhalb der Phrasen. Die Übergänge in den Pausen sind Cosinus-Rampen und damit bereits glatt. Angewendet wird pro Sample mit linearer Interpolation zwischen Frame-Stützstellen.
+   - *Geändert in Phase 3:* Ursprünglich eine Glättung über die ganze Kurve. Sie hätte jede Pausenrampe um ≈ τ in den Sprachbeginn verschoben, sodass die ersten ≈ 300 ms einer Phrase noch mit dem alten Gain gelaufen wären.
+   - `pause_max_boost_db` wird nach unten durch `−max_cut_db` begrenzt.
 
 | Parameter | Default | Bereich |
 |---|---|---|
@@ -316,6 +320,7 @@ Weil VAD und Frame-Energien der ganzen Datei nach Pass 1 vorliegen, wird die Gai
 | `max_cut_db` | **10** | 0–20 |
 | `pause_max_boost_db` | **0** | −10–+10 |
 | `slew_db_per_s` | **2** | 0,5–10 |
+| Gate unter `L_ref` | **20 dB** | intern |
 
 Fallstricke:
 - Musik oder Jingles werden mitgelevelt (Warnung, später Option für Ausschlussbereiche).
@@ -535,19 +540,26 @@ Akzeptanzkriterien:
 - [ ] Denoise ≥ 150× Echtzeit (Stereo 48 kHz, ein Kern, Apple M1 oder vergleichbarer x64).
 - [x] **Hörabnahme durch dich:** kein auffälliges Musical Noise bei Defaults auf deinen Testaufnahmen.
 
-### Phase 3: Adaptive Leveler (≈ 1–1,5 Wochen)
+### Phase 3: Adaptive Leveler (≈ 1–1,5 Wochen) – umgesetzt
+
+> **Stand 2026-11-26:** Alle automatisierten Kriterien erfüllt, Hörabnahme bestanden („klingt gut“, mit den kurzen Testclips; ein längeres Gespräch steht noch aus).
+> Abweichungen von 3.6 (Referenz, Gate, Glättung) sind dort begründet. Weitere Punkte:
+> - Der Leveler braucht VAD und Rauschprofil. Ist er an und die Rauschreduktion aus, läuft die Analyse trotzdem (Profil nur zur Kompensation).
+> - Neue Frame-Größe `k_db`: K-gewichtete Leistung aus dem STFT-Spektrum (Betragsgang der BS.1770-Filter je Bin).
+> - CLI: `--no-leveler`, `--leveler-strength <0–100>`; Report: Phrasen, gegatete Phrasen, Referenz, Gain-Bereich, mittlerer |Gain|.
+> - Bekannt: Greift der Limiter stark ein, verfehlt die Kette das Ziel weiter um bis zu ≈ 0,8 LU. Die Korrekturiteration bleibt in Phase 4. Ohne Limiter trifft die Kette mit Leveler das Ziel auf ±0,1 LU.
 
 Lieferumfang:
 - Segmentierung, Leveler-Kurve (offline), Anwendung im Render-Pass.
 - Report-Werte, Parameter und Presets.
 
 Akzeptanzkriterien:
-- [ ] Zwei synthetische Sprecher mit 10 dB Differenz: Nach dem Leveler bei 100 % liegt die Differenz der Segmentlautheit < 2 dB, bei 50 % ≈ 5 dB (±1 dB).
-- [ ] Grenzen `max_boost`/`max_cut` und `slew` werden eingehalten (Property-Tests). In langen Pausen gilt Gain ≤ `pause_max_boost`.
-- [ ] Innerhalb eines Segments mit konstantem Pegel schwankt der Gain < 1 dB (kein Pumpen).
-- [ ] `strength = 0` ist bitidentisch zum Bypass.
-- [ ] Gesamtkette ≥ 50× Echtzeit pro Kern.
-- [ ] **Hörabnahme durch dich** (Gesprächsaufnahmen mit unterschiedlich lauten Sprechern).
+- [x] Zwei synthetische Sprecher mit 10 dB Differenz: Nach dem Leveler bei 100 % liegt die Differenz der Segmentlautheit < 2 dB, bei 50 % ≈ 5 dB (±1 dB). *Gemessen: 0,1 dB bzw. 4,95 dB.*
+- [x] Grenzen `max_boost`/`max_cut` und `slew` werden eingehalten (Property-Tests, 200 Zufallsfälle). In langen Pausen gilt Gain ≤ `pause_max_boost`.
+- [x] Innerhalb eines Segments mit konstantem Pegel schwankt der Gain < 1 dB (kein Pumpen). *Gemessen: 0,0 dB in Phrasen unter 6 s; < 1 dB bei 20 s Monolog mit ±6 dB Frame-Schwankung.*
+- [x] `strength = 0` ist bitidentisch zum Bypass (mit und ohne Rauschreduktion).
+- [x] Gesamtkette ≥ 50× Echtzeit pro Kern. *Gemessen: 68× bei 3 h Stereo 48 kHz, 104 MB Peak-RSS.*
+- [x] **Hörabnahme durch dich** (Gesprächsaufnahmen mit unterschiedlich lauten Sprechern).
 
 ### Phase 4: Batch-Feinschliff, Reports, Presets, Release-Builds (≈ 1,5 Wochen)
 

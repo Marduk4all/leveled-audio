@@ -1,21 +1,26 @@
 //! Verarbeitung einer einzelnen Datei.
 //!
 //! Passes (jeweils streamend, konstanter Speicher):
-//! 1. **Analyse**: Lautheit, Clipping, DC; mit Rauschreduktion zusätzlich
-//!    STFT-Features, VAD und Minimum Statistics.
-//!    Danach offline: Rauschprofil bestimmen (gezieltes Nachlesen der Pausen).
-//! 2. **Messen** (nur mit Rauschreduktion): Lautheit nach dem Entrauschen.
-//! 3. **Rendern**: Entrauschen → Gain → True-Peak-Limiter → Dither → Datei.
+//! 1. **Analyse**: Lautheit, Clipping, DC; mit Rauschreduktion oder Leveler
+//!    zusätzlich STFT-Features, VAD und Minimum Statistics.
+//!    Danach offline: Rauschprofil bestimmen (gezieltes Nachlesen der Pausen)
+//!    und die Leveler-Kurve berechnen.
+//! 2. **Messen** (nur mit Rauschreduktion/Leveler): Lautheit nach beiden.
+//! 3. **Rendern**: Entrauschen → Leveler → Gain → True-Peak-Limiter → Dither → Datei.
 
 use crate::denoise_stage::DenoiseStage;
+use crate::leveler_stage::LevelerStage;
 use crate::noise::{NoisePlan, plan_noise, save_profile};
 use crate::progress::{CancelToken, Pass, ProgressSink};
 use crate::report::{FileReport, InputInfo, LimiterReport, OutputInfo};
-use crate::settings::{BitDepth, DenoiseSettings, DitherMode, GainRuleSetting, Settings};
+use crate::settings::{
+    BitDepth, DenoiseSettings, DitherMode, GainRuleSetting, LevelerSettings, Settings,
+};
 use crate::{BLOCK_FRAMES, PipelineError, Result};
 use leveled_audio_analysis::{
-    FeatureExtractor, FrameClass, FrameFeatures, LoudnessMeter, LoudnessStats, MinStatTracker,
-    NoiseProfile, VadParams, classify,
+    FeatureExtractor, FrameClass, FrameFeatures, LevelerCurve, LevelerParams, LoudnessMeter,
+    LoudnessStats, MinStatTracker, NoiseProfile, VadParams, classify, k_weighted_power,
+    leveler_curve,
 };
 use leveled_audio_dsp::{
     DelayLine, DenoiseParams, GainRule, LimiterParams, StftEngine, TpdfDither, TruePeakLimiter,
@@ -220,6 +225,7 @@ fn base_report(
         input_clip_runs: a.clip_runs,
         dc_offset_dbfs: a.dc_dbfs.clone(),
         denoise: None,
+        leveler: None,
         normalization_gain_db: None,
         limiter: None,
         output: None,
@@ -234,7 +240,31 @@ fn base_report(
     }
 }
 
-/// Pass 1 und Profilentscheidung, gemeinsam für analyze/process/learn.
+/// Braucht die Einstellung die STFT-Analyse (VAD, Rauschprofil)?
+fn needs_analysis(settings: &Settings) -> bool {
+    settings.denoise.enabled || settings.leveler.active()
+}
+
+fn leveler_params(l: &LevelerSettings) -> LevelerParams {
+    LevelerParams {
+        strength: l.strength,
+        max_boost_db: l.max_boost_db,
+        max_cut_db: l.max_cut_db,
+        pause_max_boost_db: l.pause_max_boost_db,
+        slew_db_per_s: l.slew_db_per_s,
+        ..Default::default()
+    }
+}
+
+/// Ergebnis von Pass 1 samt offline abgeleiteter Entscheidungen.
+struct Planned {
+    a: InputAnalysis,
+    /// Rauschprofil (auch ohne Rauschreduktion, zur Kompensation im Leveler).
+    noise: Option<NoisePlan>,
+    leveler: Option<LevelerCurve>,
+}
+
+/// Pass 1, Profilentscheidung und Leveler-Kurve, gemeinsam für analyze/process/learn.
 fn analyze_and_plan(
     src: &mut dyn AudioSource,
     path: &Path,
@@ -243,16 +273,41 @@ fn analyze_and_plan(
     id: usize,
     progress: &dyn ProgressSink,
     cancel: &CancelToken,
-) -> Result<(InputAnalysis, Option<NoisePlan>)> {
+) -> Result<Planned> {
     let d = &settings.denoise;
-    let stft = d.enabled.then(|| fft_size_for(d, src.spec().sample_rate));
+    let fft = fft_size_for(d, src.spec().sample_rate);
+    let stft = needs_analysis(settings).then_some(fft);
     let a = analysis_pass(src, path, stft, id, progress, cancel)?;
-    let plan = if d.enabled {
+    let noise = if stft.is_some() {
         Some(plan_noise(src, path, &a, d, forced)?)
     } else {
         None
     };
-    Ok((a, plan))
+    let leveler = match (&a.features, settings.leveler.active()) {
+        (Some(f), true) => {
+            // Rauschleistung abziehen, damit leise Phrasen nicht zu laut geschätzt werden.
+            let noise_k = noise
+                .as_ref()
+                .and_then(|p| p.power.as_ref())
+                .map_or(0.0, |p| k_weighted_power(p, a.spec.sample_rate, fft));
+            Some(leveler_curve(
+                f,
+                &a.classes,
+                noise_k,
+                &leveler_params(&settings.leveler),
+            ))
+        }
+        _ => None,
+    };
+    Ok(Planned { a, noise, leveler })
+}
+
+fn leveler_warnings(curve: &LevelerCurve) -> Vec<String> {
+    if curve.stats.phrases == 0 {
+        vec!["keine Sprache erkannt; Leveler ohne Wirkung".into()]
+    } else {
+        Vec::new()
+    }
 }
 
 /// Nur messen und das Rauschprofil schätzen, nichts schreiben.
@@ -266,15 +321,20 @@ pub fn analyze_file(
     let started = Instant::now();
     let mut src = open(path)?;
     progress.file_started(id, src.total_frames(), 1);
-    let (a, plan) = analyze_and_plan(src.as_mut(), path, settings, None, id, progress, cancel)?;
+    let Planned { a, noise, leveler } =
+        analyze_and_plan(src.as_mut(), path, settings, None, id, progress, cancel)?;
     progress.file_finished(id);
     let mut warnings = Vec::new();
-    let denoise = plan.map(|p| {
+    let denoise = noise.filter(|_| settings.denoise.enabled).map(|p| {
         warnings.extend(p.warnings);
         p.report
     });
+    if let Some(c) = &leveler {
+        warnings.extend(leveler_warnings(c));
+    }
     let mut r = base_report(path, &a, started, warnings);
     r.denoise = denoise;
+    r.leveler = leveler.map(|c| c.stats);
     Ok(r)
 }
 
@@ -290,9 +350,10 @@ pub fn learn_profile(
     s.denoise.enabled = true;
     let mut src = open(path)?;
     progress.file_started(0, src.total_frames(), 1);
-    let (a, plan) = analyze_and_plan(src.as_mut(), path, &s, None, 0, progress, cancel)?;
+    let Planned { a, noise, .. } =
+        analyze_and_plan(src.as_mut(), path, &s, None, 0, progress, cancel)?;
     progress.file_finished(0);
-    let plan = plan.expect("Rauschreduktion aktiv");
+    let plan = noise.expect("Rauschreduktion aktiv");
     let profile = plan.profile.ok_or_else(|| {
         PipelineError::Analysis(format!("{}: kein Rauschprofil bestimmbar", path.display()))
     })?;
@@ -423,21 +484,22 @@ fn new_denoise_stage(a: &InputAnalysis, power: &[Vec<f32>], d: &DenoiseSettings)
     )
 }
 
-/// Pass 2: Lautheit nach der Rauschreduktion messen.
+/// Pass 2: Lautheit nach Rauschreduktion und Leveler messen.
 #[allow(clippy::too_many_arguments)]
 fn measure_pass(
     src: &mut dyn AudioSource,
     path: &Path,
     a: &InputAnalysis,
-    power: &[Vec<f32>],
+    power: Option<&[Vec<f32>]>,
+    leveler: Option<&LevelerStage>,
     d: &DenoiseSettings,
     id: usize,
     progress: &dyn ProgressSink,
     cancel: &CancelToken,
 ) -> Result<LoudnessStats> {
     let ch = a.spec.channels as usize;
-    let mut stage = new_denoise_stage(a, power, d);
-    let latency = stage.latency() as u64;
+    let mut stage = power.map(|p| new_denoise_stage(a, p, d));
+    let latency = stage.as_ref().map_or(0, |s| s.latency()) as u64;
     let mut meter = LoudnessMeter::new(ch, a.spec.sample_rate).map_err(analysis_err)?;
     let mut out = vec![Vec::with_capacity(BLOCK_FRAMES); ch];
     drive(
@@ -450,7 +512,17 @@ fn measure_pass(
         progress,
         cancel,
         |block, n, fed| {
-            stage.process(block, n, &mut out);
+            let cur: &mut Vec<Vec<f32>> = match stage.as_mut() {
+                Some(s) => {
+                    s.process(block, n, &mut out);
+                    &mut out
+                }
+                None => block,
+            };
+            if let Some(l) = leveler {
+                l.apply(cur, n, fed as i64 - latency as i64);
+            }
+            let out = &*cur;
             let (skip, take) = span(latency, a.frames, fed, n);
             if take > 0 {
                 let view: Vec<Vec<f32>> =
@@ -481,10 +553,11 @@ pub fn process_file(
     let mut src = open(input)?;
     let total = src.total_frames();
     let d = &settings.denoise;
-    progress.file_started(id, total, if d.enabled { 3 } else { 2 });
+    let analysis = needs_analysis(settings);
+    progress.file_started(id, total, if analysis { 3 } else { 2 });
 
-    // ---- Pass 1: Analyse + Rauschprofil
-    let (a, plan) = analyze_and_plan(
+    // ---- Pass 1: Analyse + Rauschprofil + Leveler-Kurve
+    let Planned { a, noise, leveler } = analyze_and_plan(
         src.as_mut(),
         input,
         settings,
@@ -496,7 +569,7 @@ pub fn process_file(
     let mut warnings = Vec::new();
     let mut denoise_report = None;
     let mut noise_power = None;
-    if let Some(p) = plan {
+    if let Some(p) = noise.filter(|_| d.enabled) {
         warnings.extend(p.warnings);
         let mut rep = p.report;
         if let (Some(dir), Some(prof)) = (&opts.save_profile_dir, &p.profile)
@@ -511,16 +584,30 @@ pub fn process_file(
         denoise_report = Some(rep);
     }
 
-    // ---- Pass 2: Lautheit nach Rauschreduktion
-    let loudness_for_gain = match &noise_power {
-        Some(power) => measure_pass(src.as_mut(), input, &a, power, d, id, progress, cancel)?,
-        None => {
-            // Ohne Rauschreduktion: Messen entfällt, Fortschritt trotzdem vollständig.
-            if d.enabled {
-                progress.advance(id, Pass::Measure, total);
-            }
-            a.loudness
+    if let Some(c) = &leveler {
+        warnings.extend(leveler_warnings(c));
+    }
+    let leveler = leveler.map(LevelerStage::new);
+
+    // ---- Pass 2: Lautheit nach Rauschreduktion und Leveler
+    let loudness_for_gain = if noise_power.is_some() || leveler.is_some() {
+        measure_pass(
+            src.as_mut(),
+            input,
+            &a,
+            noise_power.as_deref(),
+            leveler.as_ref(),
+            d,
+            id,
+            progress,
+            cancel,
+        )?
+    } else {
+        // Ohne Bearbeitung vor dem Gain: Messen entfällt, Fortschritt trotzdem vollständig.
+        if analysis {
+            progress.advance(id, Pass::Measure, total);
         }
+        a.loudness
     };
 
     let gain_db = if settings.loudness.enabled {
@@ -633,6 +720,9 @@ pub fn process_file(
                     ds.write(&delta, take).map_err(audio_err(output))?;
                 }
             }
+            if let Some(l) = leveler.as_ref() {
+                l.apply(cur, n, fed as i64 - dn_latency as i64);
+            }
             apply_gain(cur, n, gain);
             let out: &mut Vec<Vec<f32>> = match limiter.as_mut() {
                 Some(l) => {
@@ -699,6 +789,7 @@ pub fn process_file(
 
     let mut report = base_report(input, &a, started, warnings);
     report.denoise = denoise_report;
+    report.leveler = leveler.map(|l| l.curve().stats);
     report.normalization_gain_db = Some(gain_db);
     report.limiter = limiter.map(|l| {
         let s = l.stats();

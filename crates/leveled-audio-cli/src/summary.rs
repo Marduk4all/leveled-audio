@@ -79,14 +79,25 @@ pub fn print_summary(results: &[FileOutcome]) {
         .unwrap_or(5)
         .clamp(5, 40);
     println!(
-        "{:<w$}  {:>6} {:>5} │ {:>6} {:>4} {:>5} │ {:>6} {:>5} {:>4} │ {:>5} {:>4}  Status",
-        "Datei", "LUFS", "dBTP", "dBFS", "Konf", "NR", "LUFS", "dBTP", "LRA", "Gain", "Lim",
+        "{:<w$}  {:>6} {:>5} │ {:>6} {:>4} {:>5} │ {:>11} │ {:>6} {:>5} {:>4} │ {:>5} {:>4}  Status",
+        "Datei",
+        "LUFS",
+        "dBTP",
+        "dBFS",
+        "Konf",
+        "NR",
+        "Leveler",
+        "LUFS",
+        "dBTP",
+        "LRA",
+        "Gain",
+        "Lim",
     );
     println!(
-        "{:<w$}  {:─^12} │ {:─^17} │ {:─^17} │",
-        "", " Eingang ", " Rauschen ", " Ausgang ",
+        "{:<w$}  {:─^12} │ {:─^17} │ {:─^11} │ {:─^17} │",
+        "", " Eingang ", " Rauschen ", "", " Ausgang ",
     );
-    let blank = |text: &str| println!("{text:>width$}", width = w + 70);
+    let blank = |text: &str| println!("{text:>width$}", width = w + 84);
     let mut notes = Vec::new();
     for r in results {
         let name = truncate(&r.display, w);
@@ -121,6 +132,13 @@ pub fn print_summary(results: &[FileOutcome]) {
                             };
                             (f(d.noise_level_dbfs), conf, nr)
                         });
+                let lev = report.leveler.as_ref().map_or(String::new(), |l| {
+                    if l.phrases == 0 {
+                        "–".into()
+                    } else {
+                        format!("{:+.0}…{:+.0}", l.gain_min_db, l.gain_max_db)
+                    }
+                });
                 let gain = report
                     .normalization_gain_db
                     .map_or(String::new(), |g| format!("{g:+.1}"));
@@ -129,7 +147,7 @@ pub fn print_summary(results: &[FileOutcome]) {
                     .as_ref()
                     .map_or(String::new(), |l| format!("{:.1}", l.max_gain_reduction_db));
                 println!(
-                    "{name:<w$}  {:>6} {:>5} │ {noise:>6} {conf:>4} {nr:>5} │ {oi:>6} {otp:>5} {olra:>4} │ {gain:>5} {lim:>4}  ok",
+                    "{name:<w$}  {:>6} {:>5} │ {noise:>6} {conf:>4} {nr:>5} │ {lev:>11} │ {oi:>6} {otp:>5} {olra:>4} │ {gain:>5} {lim:>4}  ok",
                     f(i.integrated_lufs),
                     f(i.true_peak_dbtp),
                 );
@@ -157,7 +175,8 @@ pub fn print_summary(results: &[FileOutcome]) {
     }
     println!(
         "\nRauschen: Profilpegel (dBFS), Konfidenz des Profils (MS = Minimum-Statistics-Ersatz, \
-         imp = importiert), NR = Absenkung in Pausen (dB)."
+         imp = importiert), NR = Absenkung in Pausen (dB).\n\
+         Leveler: Gain-Bereich in Sprache (dB). Gain: Normalisierung (dB), Lim: max. Limiter-Absenkung (dB)."
     );
     if !notes.is_empty() {
         println!("\nHinweise:");

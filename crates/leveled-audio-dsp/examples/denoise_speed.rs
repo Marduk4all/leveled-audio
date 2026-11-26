@@ -15,7 +15,7 @@ fn main() {
             (s >> 40) as f32 / (1u64 << 24) as f32 - 0.5
         })
         .collect();
-    let input = vec![x.clone(), x];
+    let input = [x.clone(), x];
     let noise = vec![vec![0.01f32; 1025]; 2];
     let mut den = SpectralDenoiser::new(&noise, 512.0 / 48_000.0, DenoiseParams::default());
     let mut eng = StftEngine::new(2, 2048, true);

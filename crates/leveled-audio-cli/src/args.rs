@@ -93,6 +93,12 @@ pub struct ProcessArgs {
     /// Gain-Regel der Rauschreduktion
     #[arg(long, value_enum)]
     pub gain_rule: Option<GainRuleArg>,
+    /// Keinen Leveler (Angleichen unterschiedlich lauter Sprecher)
+    #[arg(long)]
+    pub no_leveler: bool,
+    /// Stärke des Levelers in Prozent, 0–100 (überschreibt das Preset)
+    #[arg(long, value_name = "PROZENT")]
+    pub leveler_strength: Option<f64>,
     /// Dieses Rauschprofil (JSON) für alle Dateien verwenden
     #[arg(long, value_name = "DATEI")]
     pub noise_profile: Option<PathBuf>,

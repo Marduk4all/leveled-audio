@@ -1,4 +1,4 @@
-use leveled_audio_analysis::{Confidence, LoudnessStats, ProfileSource};
+use leveled_audio_analysis::{Confidence, LevelerStats, LoudnessStats, ProfileSource};
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -66,6 +66,7 @@ pub struct FileReport {
     /// Gleichspannungsanteil je Kanal in dBFS (nur gemeldet, wenn > −50 dBFS).
     pub dc_offset_dbfs: Vec<Option<f64>>,
     pub denoise: Option<DenoiseReport>,
+    pub leveler: Option<LevelerStats>,
     pub normalization_gain_db: Option<f64>,
     pub limiter: Option<LimiterReport>,
     pub output: Option<OutputInfo>,

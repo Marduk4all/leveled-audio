@@ -115,6 +115,7 @@ fn passthrough_is_bit_exact() {
     let dir = temp_dir("passthrough");
     let mut s = Settings::default();
     s.denoise.enabled = false;
+    s.leveler.enabled = false;
     s.loudness.enabled = false;
     s.limiter.enabled = false;
     s.output.dither = DitherMode::Off;
@@ -136,6 +137,7 @@ fn limiter_alone_does_not_touch_quiet_audio() {
     let dir = temp_dir("limiter-quiet");
     let mut s = Settings::default();
     s.denoise.enabled = false;
+    s.leveler.enabled = false;
     s.loudness.enabled = false;
     s.output.dither = DitherMode::Off;
     s.output.bit_depth = BitDepth::F32;

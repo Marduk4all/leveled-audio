@@ -374,6 +374,7 @@ fn delta_plus_output_reconstructs_input() {
     let input = dir.join("in.wav");
     write_wav(&input, RATE, SampleFormat::Float32, &stereo);
     let mut s = Settings::default();
+    s.leveler.enabled = false;
     s.loudness.enabled = false;
     s.limiter.enabled = false;
     s.output.dither = DitherMode::Off;

@@ -2,11 +2,13 @@
 
 Batch-Verarbeitung von Sprachaufnahmen (WAV) per Kommandozeile – offline, ohne Laufzeitabhängigkeiten.
 
-**Stand: Phase 2** – Rauschreduktion mit automatischem Rauschprofil, Loudness-Normalisierung
-(ITU-R BS.1770-4 / EBU R128) und True-Peak-Limiter. Der Leveler folgt in Phase 3, siehe [PLAN.md](PLAN.md).
+**Stand: Phase 3** – Rauschreduktion mit automatischem Rauschprofil, adaptiver Leveler,
+Loudness-Normalisierung (ITU-R BS.1770-4 / EBU R128) und True-Peak-Limiter, siehe [PLAN.md](PLAN.md).
 
-Kette: Rauschreduktion → Normalisierung → True-Peak-Limiter. Das Rauschprofil wird automatisch
+Kette: Rauschreduktion → Leveler → Normalisierung → True-Peak-Limiter. Das Rauschprofil wird automatisch
 aus den leisesten stationären Sprechpausen jeder Datei bestimmt (Fallback: Minimum Statistics).
+Der Leveler gleicht unterschiedlich laute Sprecher und Phrasen an. Die Wechsel liegen in den Pausen,
+und Pausen werden nicht angehoben.
 
 ## Bauen
 
@@ -31,6 +33,10 @@ leveled-audio process aufnahmen/ -o fertig/ --export-delta --save-profiles profi
 # Ein Profil (z. B. aus einer Raumton-Aufnahme) für alle Dateien erzwingen
 leveled-audio profile learn raumton.wav -o studio.json
 leveled-audio process aufnahmen/ -o fertig/ --noise-profile studio.json
+
+# Leveler stärker (Default 60 %) oder ganz aus
+leveled-audio process interview.wav -o fertig/ --leveler-strength 90
+leveled-audio process interview.wav -o fertig/ --no-leveler
 
 # Stärker entrauschen, oder Rauschreduktion ganz aus
 leveled-audio process interview.wav -o fertig/ --reduction-db 18

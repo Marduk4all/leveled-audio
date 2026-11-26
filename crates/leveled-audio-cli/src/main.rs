@@ -172,6 +172,15 @@ fn cmd_process(a: ProcessArgs, quiet: bool) -> Result<u8> {
     if let Some(g) = a.gain_rule {
         settings.denoise.gain_rule = g.into();
     }
+    if a.no_leveler {
+        settings.leveler.enabled = false;
+    }
+    if let Some(p) = a.leveler_strength {
+        if !(0.0..=100.0).contains(&p) {
+            bail!("--leveler-strength muss zwischen 0 und 100 liegen");
+        }
+        settings.leveler.strength = p / 100.0;
+    }
     settings.validate().map_err(anyhow::Error::msg)?;
 
     let noise_profile = match &a.noise_profile {

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     pub denoise: DenoiseSettings,
+    pub leveler: LevelerSettings,
     pub loudness: LoudnessSettings,
     pub limiter: LimiterSettings,
     pub output: OutputSettings,
@@ -130,6 +131,41 @@ impl Default for ProfileSettings {
     }
 }
 
+/// Adaptiver Leveler (gleicht unterschiedlich laute Sprecher/Phrasen an).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LevelerSettings {
+    pub enabled: bool,
+    /// 0–1 (0 = keine Wirkung, 1 = volle Angleichung an den Referenzpegel).
+    pub strength: f64,
+    pub max_boost_db: f64,
+    pub max_cut_db: f64,
+    /// Obergrenze des Gains in langen Pausen (≥ 2 s).
+    pub pause_max_boost_db: f64,
+    /// Maximale Gain-Änderung innerhalb einer Phrase.
+    pub slew_db_per_s: f64,
+}
+
+impl Default for LevelerSettings {
+    fn default() -> Self {
+        LevelerSettings {
+            enabled: true,
+            strength: 0.6,
+            max_boost_db: 10.0,
+            max_cut_db: 10.0,
+            pause_max_boost_db: 0.0,
+            slew_db_per_s: 2.0,
+        }
+    }
+}
+
+impl LevelerSettings {
+    /// Wirkt der Leveler überhaupt? (`strength = 0` ⇒ bitidentisch zum Bypass.)
+    pub fn active(&self) -> bool {
+        self.enabled && self.strength > 0.0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LoudnessSettings {
@@ -228,6 +264,7 @@ impl Settings {
         };
         Some(Settings {
             denoise: DenoiseSettings::default(),
+            leveler: LevelerSettings::default(),
             loudness: LoudnessSettings {
                 enabled: true,
                 target_lufs: target,
@@ -271,6 +308,21 @@ impl Settings {
         }
         if !(0.0..=1.0).contains(&pr.min_confidence) {
             return Err("denoise.profile.min_confidence muss zwischen 0 und 1 liegen".into());
+        }
+        let v = &self.leveler;
+        if !(0.0..=1.0).contains(&v.strength) {
+            return Err("leveler.strength muss zwischen 0 und 1 liegen (0–100 %)".into());
+        }
+        if !(0.0..=20.0).contains(&v.max_boost_db) || !(0.0..=20.0).contains(&v.max_cut_db) {
+            return Err(
+                "leveler.max_boost_db und max_cut_db müssen zwischen 0 und 20 dB liegen".into(),
+            );
+        }
+        if !(-10.0..=10.0).contains(&v.pause_max_boost_db) {
+            return Err("leveler.pause_max_boost_db muss zwischen −10 und +10 dB liegen".into());
+        }
+        if !(0.5..=10.0).contains(&v.slew_db_per_s) {
+            return Err("leveler.slew_db_per_s muss zwischen 0,5 und 10 dB/s liegen".into());
         }
         let l = &self.loudness;
         if !(-70.0..=-5.0).contains(&l.target_lufs) {
@@ -341,6 +393,8 @@ mod tests {
         let back: Settings =
             toml::from_str(&toml::to_string(&Settings::default()).unwrap()).unwrap();
         assert_eq!(back, Settings::default());
+        let bad: Settings = toml::from_str("[leveler]\nstrength = 1.5\n").unwrap();
+        assert!(bad.validate().is_err());
         let bad: Settings = toml::from_str("[denoise]\nfft_size = 1000\n").unwrap();
         assert!(bad.validate().is_err());
         assert!(toml::from_str::<Settings>("[denoise]\nfft_size = \"gross\"\n").is_err());
