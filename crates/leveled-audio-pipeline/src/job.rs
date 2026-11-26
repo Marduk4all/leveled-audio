@@ -13,10 +13,15 @@ use crate::denoise_stage::DenoiseStage;
 use crate::leveler_stage::LevelerStage;
 use crate::noise::{NoisePlan, plan_noise, save_profile};
 use crate::progress::{CancelToken, Pass, ProgressSink};
-use crate::report::{AlbumReport, DenoiseReport, FileReport, InputInfo, LimiterReport, OutputInfo};
-use crate::settings::{
-    BitDepth, DenoiseSettings, DitherMode, GainRuleSetting, LevelerSettings, Settings,
+use crate::report::{
+    AlbumReport, CompressorReport, DenoiseReport, FileReport, GateReport, InputInfo, KnockReport,
+    LimiterReport, OutputInfo,
 };
+use crate::settings::{
+    BitDepth, DenoiseSettings, DitherMode, GainRuleSetting, HighpassSettings, LevelerSettings,
+    Settings,
+};
+use crate::stages::{FilteredSource, gate_mask, knock_bin_weights, knock_plan};
 use crate::{BLOCK_FRAMES, PipelineError, Result};
 use leveled_audio_analysis::{
     FeatureExtractor, FrameClass, FrameFeatures, LevelerCurve, LevelerParams, LoudnessMeter,
@@ -24,8 +29,8 @@ use leveled_audio_analysis::{
     leveler_curve,
 };
 use leveled_audio_dsp::{
-    DelayLine, DenoiseParams, GainRule, LimiterParams, StftEngine, TpdfDither, TruePeakLimiter,
-    apply_gain, db_to_lin,
+    Compressor, CompressorParams, CompressorStats, DelayLine, DenoiseParams, GainRule, Highpass,
+    LimiterParams, StftEngine, TpdfDither, TruePeakLimiter, apply_gain, db_to_lin,
 };
 use leveled_audio_io::{AudioSink, AudioSource, AudioSpec, SampleFormat};
 use std::path::{Path, PathBuf};
@@ -83,10 +88,13 @@ fn fft_size_for(d: &DenoiseSettings, rate: u32) -> usize {
 }
 
 /// Pass 1: Eingabe messen; mit `stft_size` zusätzlich Features/VAD/Minimum Statistics.
+#[allow(clippy::too_many_arguments)]
 fn analysis_pass(
     src: &mut dyn AudioSource,
     path: &Path,
     stft_size: Option<usize>,
+    highpass: &HighpassSettings,
+    vad: &VadParams,
     id: usize,
     progress: &dyn ProgressSink,
     cancel: &CancelToken,
@@ -111,6 +119,11 @@ fn analysis_pass(
             MinStatTracker::new(ch, n / 2 + 1, hop_s, MINSTAT_WINDOW_S, snapshot_s),
         )
     });
+    // Lautheit, Clipping und DC werden am Original gemessen; die STFT-Analyse
+    // sieht das Signal nach dem Hochpass (wie alle folgenden Stufen).
+    let mut hp = (stft.is_some() && highpass.enabled)
+        .then(|| Highpass::new(ch, spec.sample_rate, highpass.frequency_hz));
+    let mut filtered = vec![Vec::with_capacity(BLOCK_FRAMES); ch];
 
     src.seek(0).map_err(audio_err(path))?;
     loop {
@@ -138,7 +151,18 @@ fn analysis_pass(
             sums[c] += s;
         }
         if let Some((eng, fx, ms)) = stft.as_mut() {
-            eng.process(&buf, n, &mut [], |f| {
+            let input: &Vec<Vec<f32>> = match hp.as_mut() {
+                Some(h) => {
+                    for (f, b) in filtered.iter_mut().zip(&buf) {
+                        f.clear();
+                        f.extend_from_slice(&b[..n]);
+                    }
+                    h.process(&mut filtered, n);
+                    &filtered
+                }
+                None => &buf,
+            };
+            eng.process(input, n, &mut [], |f| {
                 fx.push(f.spectra, f.time);
                 ms.push(f.spectra);
             });
@@ -156,7 +180,7 @@ fn analysis_pass(
                 ms.push(f.spectra);
             });
             let features = fx.finish();
-            let classes = classify(&features, &VadParams::default());
+            let classes = classify(&features, vad);
             (Some(features), classes, Some(ms.profile()))
         }
         None => (None, Vec::new(), None),
@@ -229,7 +253,11 @@ fn base_report(
         input_clip_runs: a.clip_runs,
         dc_offset_dbfs: a.dc_dbfs.clone(),
         denoise: None,
+        highpass_hz: None,
+        knock: None,
         leveler: None,
+        gate: None,
+        compressor: None,
         normalization_gain_db: None,
         loudness_correction_db: None,
         limiter: None,
@@ -247,7 +275,25 @@ fn base_report(
 
 /// Braucht die Einstellung die STFT-Analyse (VAD, Rauschprofil)?
 fn needs_analysis(settings: &Settings) -> bool {
-    settings.denoise.enabled || settings.leveler.active()
+    settings.denoise.enabled
+        || settings.leveler.active()
+        || settings.compressor.active()
+        || settings.gate.enabled
+}
+
+/// Braucht die Einstellung die Sprach-Referenz bzw. Leveler-Kurve?
+fn needs_curve(settings: &Settings) -> bool {
+    settings.leveler.active() || settings.compressor.active() || settings.gate.enabled
+}
+
+fn vad_params(settings: &Settings) -> VadParams {
+    VadParams {
+        noise_max_speech_to_low_db: settings
+            .knock
+            .enabled
+            .then_some(settings.knock.max_speech_to_low_db as f32),
+        ..VadParams::default()
+    }
 }
 
 fn leveler_params(l: &LevelerSettings) -> LevelerParams {
@@ -266,6 +312,8 @@ struct Planned {
     a: InputAnalysis,
     /// Rauschprofil (auch ohne Rauschreduktion, zur Kompensation im Leveler).
     noise: Option<NoisePlan>,
+    /// Leveler-Kurve (flach, wenn der Leveler aus ist) samt Sprach-Referenz;
+    /// vorhanden, wenn Leveler, Kompressor oder Pausen-Absenkung sie brauchen.
     leveler: Option<LevelerCurve>,
 }
 
@@ -282,25 +330,34 @@ fn analyze_and_plan(
     let d = &settings.denoise;
     let fft = fft_size_for(d, src.spec().sample_rate);
     let stft = needs_analysis(settings).then_some(fft);
-    let a = analysis_pass(src, path, stft, id, progress, cancel)?;
+    let a = analysis_pass(
+        src,
+        path,
+        stft,
+        &settings.highpass,
+        &vad_params(settings),
+        id,
+        progress,
+        cancel,
+    )?;
     let noise = if stft.is_some() {
-        Some(plan_noise(src, path, &a, d, forced)?)
+        let mut fsrc = FilteredSource::new(src, &settings.highpass);
+        Some(plan_noise(&mut fsrc, path, &a, d, forced)?)
     } else {
         None
     };
-    let leveler = match (&a.features, settings.leveler.active()) {
+    let leveler = match (&a.features, needs_curve(settings)) {
         (Some(f), true) => {
+            let mut lp = leveler_params(&settings.leveler);
+            if !settings.leveler.active() {
+                lp.strength = 0.0;
+            }
             // Rauschleistung abziehen, damit leise Phrasen nicht zu laut geschätzt werden.
             let noise_k = noise
                 .as_ref()
                 .and_then(|p| p.power.as_ref())
                 .map_or(0.0, |p| k_weighted_power(p, a.spec.sample_rate, fft));
-            Some(leveler_curve(
-                f,
-                &a.classes,
-                noise_k,
-                &leveler_params(&settings.leveler),
-            ))
+            Some(leveler_curve(f, &a.classes, noise_k, &lp))
         }
         _ => None,
     };
@@ -334,12 +391,18 @@ pub fn analyze_file(
         warnings.extend(p.warnings);
         p.report
     });
+    let leveler = leveler.filter(|_| settings.leveler.active());
     if let Some(c) = &leveler {
         warnings.extend(leveler_warnings(c));
     }
     let mut r = base_report(path, &a, started.elapsed(), warnings);
     r.denoise = denoise;
     r.leveler = leveler.map(|c| c.stats);
+    r.knock = knock_report(&a, settings);
+    r.highpass_hz = settings
+        .highpass
+        .enabled
+        .then_some(settings.highpass.frequency_hz);
     Ok(r)
 }
 
@@ -479,14 +542,79 @@ fn denoise_params(d: &DenoiseSettings) -> DenoiseParams {
     }
 }
 
-fn new_denoise_stage(a: &InputAnalysis, power: &[Vec<f32>], d: &DenoiseSettings) -> DenoiseStage {
-    DenoiseStage::new(
+fn new_denoise_stage(
+    a: &InputAnalysis,
+    power: &[Vec<f32>],
+    d: &DenoiseSettings,
+    knock: Option<&[f32]>,
+) -> DenoiseStage {
+    let fft = fft_size_for(d, a.spec.sample_rate);
+    let stage = DenoiseStage::new(
         power,
-        fft_size_for(d, a.spec.sample_rate),
+        fft,
         a.spec.sample_rate,
         denoise_params(d),
         a.classes.clone(),
-    )
+    );
+    match knock {
+        Some(k) => stage.with_knock(k, knock_bin_weights(a.spec.sample_rate, fft)),
+        None => stage,
+    }
+}
+
+/// Stufen zwischen Rauschreduktion und Normalisierungs-Gain, gemeinsam für
+/// Pass 2 und 3 (beide müssen dasselbe rechnen).
+struct PreGain<'a> {
+    a: &'a InputAnalysis,
+    noise_power: Option<&'a [Vec<f32>]>,
+    knock: Option<&'a [f32]>,
+    d: &'a DenoiseSettings,
+    curve: Option<&'a LevelerStage>,
+    compressor: Option<CompressorParams>,
+}
+
+impl PreGain<'_> {
+    fn denoise_stage(&self) -> Option<DenoiseStage> {
+        self.noise_power
+            .map(|p| new_denoise_stage(self.a, p, self.d, self.knock))
+    }
+
+    fn compressor(&self) -> Option<Compressor> {
+        self.compressor
+            .map(|p| Compressor::new(self.a.spec.channels as usize, self.a.spec.sample_rate, p))
+    }
+}
+
+/// Pausen-Messung in Pass 2: Leistung der Ausgabe in Frames mit voller Maske.
+struct PauseMeter<'a> {
+    mask: &'a [f32],
+    first_center: i64,
+    hop: usize,
+    sum: f64,
+    count: u64,
+}
+
+impl PauseMeter<'_> {
+    fn add(&mut self, out: &[Vec<f32>], from: usize, take: usize, first_sample: i64) {
+        let ch = out.len() as f64;
+        for i in 0..take {
+            let t = first_sample + i as i64;
+            let k = ((t - self.first_center) as f64 / self.hop as f64).round();
+            let k = (k.max(0.0) as usize).min(self.mask.len().saturating_sub(1));
+            if self.mask.get(k).is_some_and(|m| *m >= 0.999) {
+                self.sum += out
+                    .iter()
+                    .map(|c| (c[from + i] as f64).powi(2))
+                    .sum::<f64>()
+                    / ch;
+                self.count += 1;
+            }
+        }
+    }
+
+    fn level_db(&self) -> Option<f64> {
+        (self.count > 0 && self.sum > 0.0).then(|| 10.0 * (self.sum / self.count as f64).log10())
+    }
 }
 
 /// Pass 2: Lautheit nach Rauschreduktion und Leveler messen.
@@ -494,24 +622,42 @@ fn new_denoise_stage(a: &InputAnalysis, power: &[Vec<f32>], d: &DenoiseSettings)
 fn measure_pass(
     src: &mut dyn AudioSource,
     path: &Path,
-    a: &InputAnalysis,
-    power: Option<&[Vec<f32>]>,
-    leveler: Option<&LevelerStage>,
-    d: &DenoiseSettings,
+    chain: &PreGain,
+    mut pause: Option<PauseMeter>,
+    probe: Option<(f64, LimiterParams)>,
     id: usize,
     progress: &dyn ProgressSink,
     cancel: &CancelToken,
-) -> Result<LoudnessMeter> {
+) -> Result<MeasureOut> {
+    let a = chain.a;
     let ch = a.spec.channels as usize;
-    let mut stage = power.map(|p| new_denoise_stage(a, p, d));
-    let latency = stage.as_ref().map_or(0, |s| s.latency()) as u64;
+    let mut stage = chain.denoise_stage();
+    let mut comp = chain.compressor();
+    let dn_latency = stage.as_ref().map_or(0, |s| s.latency()) as u64;
+    let latency = dn_latency + comp.as_ref().map_or(0, |c| c.latency()) as u64;
+    let leveler = chain.curve;
     let mut meter = LoudnessMeter::new(ch, a.spec.sample_rate).map_err(analysis_err)?;
     let mut out = vec![Vec::with_capacity(BLOCK_FRAMES); ch];
+    let mut comp_buf = vec![Vec::with_capacity(BLOCK_FRAMES); ch];
+    // Limiter-Probe: geschätzter Gain + Limiter, um den Lautheitsverlust durch
+    // den Limiter schon vor dem Rendern zu kennen (spart meist eine
+    // Korrekturiteration).
+    let mut probe = match probe {
+        Some((g, p)) => Some((
+            db_to_lin(g) as f32,
+            TruePeakLimiter::new(ch, a.spec.sample_rate, p),
+            LoudnessMeter::new(ch, a.spec.sample_rate).map_err(analysis_err)?,
+            vec![Vec::with_capacity(BLOCK_FRAMES); ch],
+            vec![Vec::with_capacity(BLOCK_FRAMES); ch],
+        )),
+        None => None,
+    };
+    let probe_latency = probe.as_ref().map_or(0, |p| p.1.latency()) as u64;
     drive(
         src,
         path,
         a.frames,
-        latency,
+        latency + probe_latency,
         Pass::Measure,
         id,
         progress,
@@ -525,23 +671,71 @@ fn measure_pass(
                 None => block,
             };
             if let Some(l) = leveler {
-                l.apply(cur, n, fed as i64 - latency as i64);
+                l.apply(cur, n, fed as i64 - dn_latency as i64);
             }
-            let out = &*cur;
+            let out: &Vec<Vec<f32>> = match comp.as_mut() {
+                Some(c) => {
+                    c.process(cur, &mut comp_buf, n);
+                    &comp_buf
+                }
+                None => cur,
+            };
             let (skip, take) = span(latency, a.frames, fed, n);
             if take > 0 {
                 let view: Vec<Vec<f32>> =
                     out.iter().map(|c| c[skip..skip + take].to_vec()).collect();
                 meter.add(&view, take).map_err(analysis_err)?;
+                if let Some(p) = pause.as_mut() {
+                    p.add(out, skip, take, fed as i64 + skip as i64 - latency as i64);
+                }
+            }
+            if let Some((g, lim, m, gained, limited)) = probe.as_mut() {
+                for (dst, src) in gained.iter_mut().zip(out.iter()) {
+                    dst.clear();
+                    dst.extend(src[..n].iter().map(|v| v * *g));
+                }
+                lim.process(gained, limited, n);
+                let (skip, take) = span(latency + probe_latency, a.frames, fed, n);
+                if take > 0 {
+                    let view: Vec<Vec<f32>> = limited
+                        .iter()
+                        .map(|c| c[skip..skip + take].to_vec())
+                        .collect();
+                    m.add(&view, take).map_err(analysis_err)?;
+                }
             }
             Ok(())
         },
     )?;
-    Ok(meter)
+    let probe = match probe {
+        Some((_, _, m, _, _)) => m.stats().map_err(analysis_err)?.integrated_lufs,
+        None => None,
+    };
+    Ok(MeasureOut {
+        meter,
+        pause_db: pause.and_then(|p| p.level_db()),
+        probe_lufs: probe,
+    })
+}
+
+struct MeasureOut {
+    meter: LoudnessMeter,
+    pause_db: Option<f64>,
+    /// Lautheit nach geschätztem Gain und Limiter (Limiter-Probe).
+    probe_lufs: Option<f64>,
+}
+
+fn limiter_params(settings: &Settings) -> LimiterParams {
+    LimiterParams {
+        ceiling_dbtp: settings.limiter.ceiling_dbtp,
+        lookahead_ms: settings.limiter.lookahead_ms,
+        release_ms: settings.limiter.release_ms,
+        oversampling: settings.limiter.oversampling,
+    }
 }
 
 /// Ab dieser Abweichung der Ausgangslautheit vom Ziel folgt eine Korrekturiteration.
-const CORRECTION_THRESHOLD_LU: f64 = 0.5;
+const CORRECTION_THRESHOLD_LU: f64 = 0.3;
 /// Höchstens so viele Korrekturiterationen (die zweite nur, wenn die erste
 /// nicht reicht; im Normalfall gar keine).
 const MAX_CORRECTIONS: usize = 2;
@@ -589,6 +783,17 @@ impl Corrector {
         ((next - gain_db).abs() > 1e-3).then_some(next)
     }
 
+    /// Stützpunkt ohne eigenen Render-Durchlauf (Limiter-Probe aus Pass 2).
+    /// Liefert den Gain für den ersten Durchlauf: ein Schritt mit Steigung 1,
+    /// begrenzt wie die Korrektur.
+    fn seed(&mut self, gain_db: f64, lufs: f64) -> f64 {
+        self.points.push((gain_db, lufs));
+        (gain_db + self.target - lufs).clamp(
+            self.first_gain - CORRECTION_MAX_DB,
+            self.first_gain + CORRECTION_MAX_DB,
+        )
+    }
+
     /// Gesamte Korrektur gegenüber dem ersten Gain, falls iteriert wurde.
     fn correction(&self, final_gain: f64) -> Option<f64> {
         (self.points.len() > 1).then_some(final_gain - self.first_gain)
@@ -606,10 +811,20 @@ struct PreparedFile {
     a: InputAnalysis,
     noise_power: Option<Vec<Vec<f32>>>,
     denoise_report: Option<DenoiseReport>,
-    leveler: Option<LevelerStage>,
+    /// Störgeräusch-Absenkung je Frame (dB), falls aktiv.
+    knock_gain: Option<Vec<f32>>,
+    /// Leveler-Kurve (flach, wenn der Leveler aus ist); Grundlage der
+    /// Gain-Stufe vor der Normalisierung.
+    curve: Option<LevelerCurve>,
+    leveler_active: bool,
+    /// Pausen-Absenkung: Maske je Frame und Pausenpegel aus Pass 2 (vor Gain).
+    gate: Option<(Vec<f32>, Option<f64>)>,
+    compressor: Option<CompressorParams>,
     warnings: Vec<String>,
-    /// Messung nach Rauschreduktion und Leveler, vor dem Normalisierungs-Gain.
+    /// Messung nach allen Stufen vor dem Normalisierungs-Gain.
     measured: LoudnessMeter,
+    /// Limiter-Probe aus Pass 2: (geschätzter Gain, Lautheit danach).
+    probe: Option<(f64, f64)>,
 }
 
 impl PreparedFile {
@@ -617,11 +832,60 @@ impl PreparedFile {
     fn loudness_lufs(&self) -> Option<f64> {
         self.measured.stats().ok().and_then(|s| s.integrated_lufs)
     }
+
+    /// Tiefe der Pausen-Absenkung für einen Normalisierungs-Gain.
+    fn gate_depth(&self, settings: &Settings, gain_db: f64) -> Option<f64> {
+        let (_, pause_db) = self.gate.as_ref()?;
+        let g = &settings.gate;
+        Some(((*pause_db)? + gain_db - g.floor_dbfs).clamp(0.0, g.max_attenuation_db))
+    }
+
+    /// Gain-Stufe für Pass 3: Leveler × Pausen-Absenkung.
+    fn render_curve(&self, settings: &Settings, gain_db: f64) -> Option<LevelerStage> {
+        let depth = self.gate_depth(settings, gain_db).filter(|d| *d > 0.0);
+        if !self.leveler_active && depth.is_none() {
+            return None;
+        }
+        let mut c = self.curve.clone()?;
+        if !self.leveler_active {
+            c.gain_db.iter_mut().for_each(|g| *g = 0.0);
+        }
+        if let (Some(d), Some((mask, _))) = (depth, &self.gate) {
+            for (g, m) in c.gain_db.iter_mut().zip(mask) {
+                *g -= d as f32 * m;
+            }
+        }
+        Some(LevelerStage::new(c))
+    }
 }
 
 /// Wie viele Durchgänge `prepare` braucht (für die Fortschrittsanzeige).
 fn prepare_passes(settings: &Settings) -> u32 {
-    if needs_analysis(settings) { 2 } else { 1 }
+    if needs_analysis(settings) || settings.highpass.enabled {
+        2
+    } else {
+        1
+    }
+}
+
+/// Störgeräusch-Statistik aus den VAD-Klassen.
+fn knock_report(a: &InputAnalysis, settings: &Settings) -> Option<KnockReport> {
+    if !settings.knock.enabled || a.classes.is_empty() {
+        return None;
+    }
+    let hop_s = fft_size_for(&settings.denoise, a.spec.sample_rate) as f64
+        / 4.0
+        / a.spec.sample_rate as f64;
+    let k = knock_plan(&a.classes, 0.0, 1);
+    Some(KnockReport {
+        regions: k.regions,
+        duration_s: k.frames as f64 * hop_s,
+        reduction_db: if settings.denoise.enabled {
+            settings.knock.reduction_db
+        } else {
+            0.0
+        },
+    })
 }
 
 /// Pass 1 und 2 ohne Fortschrittsrahmen.
@@ -629,6 +893,7 @@ fn prepare(
     input: &Path,
     settings: &Settings,
     opts: &JobOptions,
+    probe: bool,
     id: usize,
     progress: &dyn ProgressSink,
     cancel: &CancelToken,
@@ -642,7 +907,7 @@ fn prepare(
     let Planned {
         mut a,
         noise,
-        leveler,
+        leveler: curve,
     } = analyze_and_plan(
         src.as_mut(),
         input,
@@ -652,6 +917,7 @@ fn prepare(
         progress,
         cancel,
     )?;
+    let hop_s = a.features.as_ref().map_or(0.0, |f| f.hop_seconds());
     // Für das Rendern nicht mehr nötig; spart im Album-Modus Speicher.
     a.features = None;
     a.minstat = None;
@@ -672,30 +938,108 @@ fn prepare(
         noise_power = p.power;
         denoise_report = Some(rep);
     }
-    if let Some(c) = &leveler {
+    let leveler_active = settings.leveler.active() && curve.is_some();
+    if let (true, Some(c)) = (leveler_active, &curve) {
         warnings.extend(leveler_warnings(c));
     }
-    let leveler = leveler.map(LevelerStage::new);
+    // Störgeräusch-Absenkung (nur zusammen mit der Rauschreduktion, PLAN 3.13).
+    let knock_gain =
+        (settings.knock.enabled && settings.knock.reduction_db > 0.0 && noise_power.is_some())
+            .then(|| {
+                knock_plan(
+                    &a.classes,
+                    settings.knock.reduction_db,
+                    (0.03 / hop_s).round() as usize,
+                )
+                .gain_db
+            })
+            .filter(|g| g.iter().any(|v| *v < 0.0));
+    // Kompressor: Schwelle relativ zum Sprach-Referenzpegel.
+    let reference = curve.as_ref().and_then(|c| c.stats.reference_db);
+    let c = &settings.compressor;
+    let compressor = match (c.active(), reference) {
+        (true, Some(r)) => Some(CompressorParams {
+            threshold_dbfs: r + c.threshold_above_ref_db,
+            ratio: Compressor::ratio_for_amount(c.amount),
+            attack_ms: c.attack_ms,
+            release_ms: c.release_ms,
+            ..CompressorParams::default()
+        }),
+        (true, None) => {
+            warnings.push("keine Sprache erkannt; Kompressor ohne Wirkung".into());
+            None
+        }
+        _ => None,
+    };
+    let gate_mask = (settings.gate.enabled && !a.classes.is_empty() && hop_s > 0.0).then(|| {
+        gate_mask(
+            &a.classes,
+            hop_s,
+            &settings.gate,
+            vad_params(settings).hangover_ms,
+        )
+    });
 
-    // ---- Pass 2: Lautheit nach Rauschreduktion und Leveler
-    let measured = if noise_power.is_some() || leveler.is_some() {
-        measure_pass(
-            src.as_mut(),
-            input,
-            &a,
-            noise_power.as_deref(),
-            leveler.as_ref(),
+    // ---- Pass 2: Lautheit (und Pausenpegel) vor dem Normalisierungs-Gain
+    let any_stage = noise_power.is_some()
+        || leveler_active
+        || compressor.is_some()
+        || gate_mask.is_some()
+        || settings.highpass.enabled;
+    let mut probe_point = None;
+    let (measured, gate) = if any_stage {
+        let level_stage = curve
+            .as_ref()
+            .filter(|_| leveler_active)
+            .map(|c| LevelerStage::new(c.clone()));
+        let chain = PreGain {
+            a: &a,
+            noise_power: noise_power.as_deref(),
+            knock: knock_gain.as_deref(),
             d,
+            curve: level_stage.as_ref(),
+            compressor,
+        };
+        let pause = match (&gate_mask, &curve) {
+            (Some(m), Some(c)) => Some(PauseMeter {
+                mask: m,
+                first_center: c.first_center,
+                hop: c.hop,
+                sum: 0.0,
+                count: 0,
+            }),
+            _ => None,
+        };
+        // Gain-Schätzung für die Limiter-Probe aus der Eingangslautheit.
+        let probe_gain = (probe && settings.loudness.enabled && settings.limiter.enabled)
+            .then_some(a.loudness.integrated_lufs)
+            .flatten()
+            .map(|i| settings.loudness.target_lufs - i);
+        let mut fsrc = FilteredSource::new(src.as_mut(), &settings.highpass);
+        let m = measure_pass(
+            &mut fsrc,
+            input,
+            &chain,
+            pause,
+            probe_gain.map(|g| (g, limiter_params(settings))),
             id,
             progress,
             cancel,
-        )?
+        )?;
+        let gate = gate_mask.map(|mask| {
+            if m.pause_db.is_none() {
+                warnings.push("Pausen-Absenkung: keine ausreichend langen Pausen gefunden".into());
+            }
+            (mask, m.pause_db)
+        });
+        probe_point = probe_gain.zip(m.probe_lufs);
+        (m.meter, gate)
     } else {
         // Ohne Bearbeitung vor dem Gain gilt die Messung aus Pass 1.
         if needs_analysis(settings) {
             progress.advance(id, Pass::Measure, total);
         }
-        a.meter.take().expect("Messung aus Pass 1")
+        (a.meter.take().expect("Messung aus Pass 1"), None)
     };
     a.meter = None;
     Ok(PreparedFile {
@@ -704,9 +1048,14 @@ fn prepare(
         a,
         noise_power,
         denoise_report,
-        leveler,
+        knock_gain,
+        curve,
+        leveler_active,
+        gate,
+        compressor,
         warnings,
         measured,
+        probe: probe_point,
     })
 }
 
@@ -743,6 +1092,7 @@ struct RenderOut {
     limiter: Option<LimiterReport>,
     clipped: u64,
     denoise: Option<DenoiseOut>,
+    compressor: Option<CompressorStats>,
     out_format: SampleFormat,
     delta: Option<PathBuf>,
 }
@@ -763,7 +1113,8 @@ fn render_pass(
     let a = &prep.a;
     let d = &settings.denoise;
     let input = prep.input.as_path();
-    let mut src = open(input)?;
+    let mut raw = open(input)?;
+    let mut src = FilteredSource::new(raw.as_mut(), &settings.highpass);
     let out_spec = resolve_output_spec(a.spec, settings.output.bit_depth);
     let ch = a.spec.channels as usize;
     let dither_on = match settings.output.dither {
@@ -772,24 +1123,25 @@ fn render_pass(
         DitherMode::Off => false,
     };
     let mut dither = dither_on.then(|| TpdfDither::new(ch, out_spec.format.bits()));
-    let mut stage = prep
-        .noise_power
-        .as_ref()
-        .map(|p| new_denoise_stage(a, p, d));
-    let mut limiter = settings.limiter.enabled.then(|| {
-        TruePeakLimiter::new(
-            ch,
-            a.spec.sample_rate,
-            LimiterParams {
-                ceiling_dbtp: settings.limiter.ceiling_dbtp,
-                lookahead_ms: settings.limiter.lookahead_ms,
-                release_ms: settings.limiter.release_ms,
-                oversampling: settings.limiter.oversampling,
-            },
-        )
-    });
+    let curve = prep.render_curve(settings, gain_db);
+    let chain = PreGain {
+        a,
+        noise_power: prep.noise_power.as_deref(),
+        knock: prep.knock_gain.as_deref(),
+        d,
+        curve: curve.as_ref(),
+        compressor: prep.compressor,
+    };
+    let mut stage = chain.denoise_stage();
+    let mut comp = chain.compressor();
+    let mut limiter = settings
+        .limiter
+        .enabled
+        .then(|| TruePeakLimiter::new(ch, a.spec.sample_rate, limiter_params(settings)));
     let dn_latency = stage.as_ref().map_or(0, |s| s.latency()) as u64;
-    let latency = dn_latency + limiter.as_ref().map_or(0, |l| l.latency()) as u64;
+    let latency = dn_latency
+        + comp.as_ref().map_or(0, |c| c.latency()) as u64
+        + limiter.as_ref().map_or(0, |l| l.latency()) as u64;
 
     let partial = with_suffix(output, ".partial");
     let delta_final = (with_delta && stage.is_some()).then(|| delta_path(output));
@@ -820,12 +1172,13 @@ fn render_pass(
     let mut meter = LoudnessMeter::new(ch, a.spec.sample_rate).map_err(analysis_err)?;
 
     let gain = db_to_lin(gain_db) as f32;
-    let leveler = prep.leveler.as_ref();
+    let leveler = curve.as_ref();
     let mut den_buf = vec![Vec::with_capacity(BLOCK_FRAMES); ch];
+    let mut comp_buf = vec![Vec::with_capacity(BLOCK_FRAMES); ch];
     let mut lim_buf = vec![Vec::with_capacity(BLOCK_FRAMES); ch];
     let mut dry_buf = vec![Vec::with_capacity(BLOCK_FRAMES); ch];
     drive(
-        src.as_mut(),
+        &mut src,
         input,
         a.frames,
         latency,
@@ -860,6 +1213,13 @@ fn render_pass(
             if let Some(l) = leveler {
                 l.apply(cur, n, fed as i64 - dn_latency as i64);
             }
+            let cur: &mut Vec<Vec<f32>> = match comp.as_mut() {
+                Some(c) => {
+                    c.process(cur, &mut comp_buf, n);
+                    &mut comp_buf
+                }
+                None => cur,
+            };
             apply_gain(cur, n, gain);
             let out: &mut Vec<Vec<f32>> = match limiter.as_mut() {
                 Some(l) => {
@@ -920,6 +1280,7 @@ fn render_pass(
                 att_speech: st.stats.attenuation_speech_db(),
             }
         }),
+        compressor: comp.map(|c| c.stats()),
         out_format: out_spec.format,
         delta: delta_final,
     })
@@ -948,6 +1309,14 @@ fn render(
 ) -> Result<RenderedFile> {
     let started = Instant::now();
     let mut gain_db = gain_db;
+    let target = settings.loudness.target_lufs;
+    let mut corr = Corrector::new(target, gain_db);
+    let correcting = correct && settings.loudness.enabled && settings.limiter.enabled;
+    // Mit Limiter-Probe: Der Gain der Probe samt gemessener Lautheit ist der
+    // erste Stützpunkt; meist trifft schon der erste Render-Durchlauf.
+    if let (true, Some((g0, l0))) = (correcting, prep.probe) {
+        gain_db = corr.seed(g0, l0);
+    }
     let mut out = render_pass(
         prep,
         output,
@@ -959,9 +1328,7 @@ fn render(
         cancel,
     )?;
     let mut loudness_out = out.meter.stats().map_err(analysis_err)?;
-    let target = settings.loudness.target_lufs;
-    let mut corr = Corrector::new(target, gain_db);
-    if correct && settings.loudness.enabled && settings.limiter.enabled {
+    if correcting {
         while let Some(i) = loudness_out.integrated_lufs {
             let Some(next) = corr.next(gain_db, i) else {
                 break;
@@ -1009,7 +1376,35 @@ fn render(
     all.append(&mut warnings);
     let mut report = base_report(&prep.input, &prep.a, prep.busy + started.elapsed(), all);
     report.denoise = denoise_report;
-    report.leveler = prep.leveler.as_ref().map(|l| l.curve().stats);
+    report.leveler = prep
+        .curve
+        .as_ref()
+        .filter(|_| prep.leveler_active)
+        .map(|c| c.stats);
+    report.highpass_hz = settings
+        .highpass
+        .enabled
+        .then_some(settings.highpass.frequency_hz);
+    report.knock = knock_report(&prep.a, settings);
+    report.compressor = match (prep.compressor, out.compressor) {
+        (Some(p), Some(st)) => Some(CompressorReport {
+            threshold_dbfs: p.threshold_dbfs + gain_db,
+            ratio: p.ratio,
+            max_gain_reduction_db: st.max_reduction_db,
+            active_fraction: st.active_fraction(),
+        }),
+        _ => None,
+    };
+    report.gate = prep.gate.as_ref().map(|(mask, pause_db)| GateReport {
+        floor_dbfs: settings.gate.floor_dbfs,
+        pause_level_dbfs: pause_db.map(|p| p + gain_db),
+        attenuation_db: prep.gate_depth(settings, gain_db).unwrap_or(0.0),
+        gated_fraction: if mask.is_empty() {
+            0.0
+        } else {
+            mask.iter().filter(|m| **m > 0.5).count() as f64 / mask.len() as f64
+        },
+    });
     report.normalization_gain_db = Some(gain_db);
     report.loudness_correction_db = correction;
     report.limiter = out.limiter;
@@ -1041,7 +1436,7 @@ pub fn process_file(
 ) -> Result<FileReport> {
     let frames = open(input)?.total_frames();
     progress.file_started(id, frames, prepare_passes(settings) + 1);
-    let prep = prepare(input, settings, opts, id, progress, cancel)?;
+    let prep = prepare(input, settings, opts, true, id, progress, cancel)?;
     let mut warnings = Vec::new();
     let gain = normalization_gain(settings, prep.loudness_lufs(), &mut warnings);
     let r = render(
@@ -1076,7 +1471,7 @@ pub fn process_album(
     let prepared: Vec<Result<PreparedFile>> = run_batch(items.iter().collect(), jobs, |id, it| {
         let frames = open(&it.0)?.total_frames();
         progress.file_started(id, frames, prepare_passes(settings));
-        let r = prepare(&it.0, settings, opts, id, progress, cancel);
+        let r = prepare(&it.0, settings, opts, false, id, progress, cancel);
         progress.file_finished(id);
         r
     });
@@ -1249,7 +1644,7 @@ mod tests {
 
         // Treffer im ersten Durchlauf: keine Iteration.
         let mut c = Corrector::new(-16.0, 5.0);
-        assert_eq!(c.next(5.0, -16.3), None);
+        assert_eq!(c.next(5.0, -16.2), None);
         assert_eq!(c.correction(5.0), None);
     }
 

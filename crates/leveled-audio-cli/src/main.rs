@@ -11,8 +11,8 @@ use clap::Parser;
 use inputs::{Job, collect_inputs, plan_outputs};
 use leveled_audio_pipeline::{
     AlbumReport, CancelToken, JobOptions, LoudnessMode, NoProgress, PRESET_NAMES, Pass,
-    ProgressSink, Settings, analyze_file, learn_profile, load_profile, process_album, process_file,
-    run_batch, save_profile,
+    ProgressSink, Settings, analyze_file, learn_profile, load_profile, preset_description,
+    process_album, process_file, run_batch, save_profile,
 };
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -61,7 +61,7 @@ fn default_jobs() -> usize {
 
 fn run(cli: Cli) -> Result<u8> {
     match cli.command {
-        Command::Process(a) => cmd_process(a, cli.quiet),
+        Command::Process(a) => cmd_process(*a, cli.quiet),
         Command::Analyze(a) => {
             let mut settings = load_settings(&a.preset)?;
             apply_overrides(&mut settings, &a.overrides)?;
@@ -117,11 +117,7 @@ fn run(cli: Cli) -> Result<u8> {
             match cmd {
                 PresetCmd::List => {
                     for name in PRESET_NAMES {
-                        let s = Settings::preset(name).expect("Preset");
-                        println!(
-                            "{name:<16} {:>6.1} LUFS  {:>5.1} dBTP",
-                            s.loudness.target_lufs, s.limiter.ceiling_dbtp
-                        );
+                        println!("{name:<17} {}", preset_description(name));
                     }
                     println!(
                         "\nEigene Presets: `leveled-audio preset show <name> > mein.toml`, anpassen,\n\
@@ -133,7 +129,7 @@ fn run(cli: Cli) -> Result<u8> {
                     let label = std::path::Path::new(&name)
                         .file_stem()
                         .map_or(name.clone(), |s| s.to_string_lossy().into_owned());
-                    print!("{}", s.to_preset_toml(&label));
+                    print!("{}", summary::annotate_preset(&s.to_preset_toml(&label)));
                 }
             }
             Ok(0)
@@ -232,6 +228,37 @@ fn cmd_process(a: ProcessArgs, quiet: bool) -> Result<u8> {
     }
     if a.no_leveler {
         settings.leveler.enabled = false;
+    }
+    if let Some(h) = a.highpass {
+        settings.highpass.enabled = true;
+        settings.highpass.frequency_hz = h;
+    }
+    if a.no_highpass {
+        settings.highpass.enabled = false;
+    }
+    if let Some(k) = a.knock_reduction {
+        settings.knock.enabled = true;
+        settings.knock.reduction_db = k;
+    }
+    if a.no_knock {
+        settings.knock.enabled = false;
+    }
+    if let Some(p) = a.compression {
+        if !(0.0..=100.0).contains(&p) {
+            bail!("--compression muss zwischen 0 und 100 liegen");
+        }
+        settings.compressor.enabled = true;
+        settings.compressor.amount = p / 100.0;
+    }
+    if a.no_compression {
+        settings.compressor.enabled = false;
+    }
+    if let Some(f) = a.pause_floor {
+        settings.gate.enabled = true;
+        settings.gate.floor_dbfs = f;
+    }
+    if a.no_pause_floor {
+        settings.gate.enabled = false;
     }
     if let Some(p) = a.leveler_strength {
         if !(0.0..=100.0).contains(&p) {

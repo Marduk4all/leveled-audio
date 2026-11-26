@@ -20,6 +20,7 @@ mod noise;
 mod progress;
 mod report;
 mod settings;
+mod stages;
 
 pub use batch::run_batch;
 pub use job::{
@@ -29,11 +30,15 @@ pub use job::{
 pub use leveled_audio_analysis::{LevelerStats, LoudnessStats, NoiseProfile, ProfileSource};
 pub use noise::{load_profile, save_profile};
 pub use progress::{CancelToken, NoProgress, Pass, ProgressSink};
-pub use report::{AlbumReport, DenoiseReport, FileReport, InputInfo, LimiterReport, OutputInfo};
+pub use report::{
+    AlbumReport, CompressorReport, DenoiseReport, FileReport, GateReport, InputInfo, KnockReport,
+    LimiterReport, OutputInfo,
+};
 pub use settings::{
-    BitDepth, DenoiseSettings, DitherMode, FftSize, GainRuleSetting, LevelerSettings,
-    LimiterSettings, LoudnessMode, LoudnessSettings, OutputSettings, PRESET_NAMES,
-    PRESET_SCHEMA_VERSION, ProfileSettings, Settings, StatisticSetting,
+    BitDepth, CompressorSettings, DenoiseSettings, DitherMode, FftSize, GainRuleSetting,
+    GateSettings, HighpassSettings, KnockSettings, LevelerSettings, LimiterSettings, LoudnessMode,
+    LoudnessSettings, OutputSettings, PRESET_NAMES, PRESET_SCHEMA_VERSION, ProfileSettings,
+    Settings, StatisticSetting, preset_description,
 };
 
 use std::path::PathBuf;

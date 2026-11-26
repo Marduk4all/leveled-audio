@@ -47,6 +47,8 @@ pub struct DenoiseStage {
     channels: usize,
     pub stats: DenoiseStats,
     scale: f64,
+    /// Störgeräusch-Absenkung: Gain je Frame (linear, Amplitude) und Gewicht je Bin.
+    knock: Option<(Vec<f32>, Vec<f32>)>,
 }
 
 impl DenoiseStage {
@@ -67,7 +69,17 @@ impl DenoiseStage {
             channels,
             stats: DenoiseStats::default(),
             scale: power_scale(fft_size),
+            knock: None,
         }
+    }
+
+    /// Störgeräusch-Absenkung einschalten: `gain_db` je Frame (≤ 0), `weights`
+    /// je Bin (0–1; 1 = volle Absenkung).
+    pub fn with_knock(mut self, gain_db: &[f32], weights: Vec<f32>) -> Self {
+        if gain_db.iter().any(|g| *g < 0.0) {
+            self.knock = Some((gain_db.to_vec(), weights));
+        }
+        self
     }
 
     pub fn latency(&self) -> usize {
@@ -90,6 +102,7 @@ impl DenoiseStage {
             denoiser,
             classes,
             stats,
+            knock,
             ..
         } = self;
         engine.process(input, frames, output, |f| {
@@ -113,6 +126,20 @@ impl DenoiseStage {
             };
             let before = energy(f.spectra);
             denoiser.process(f.spectra);
+            if let Some((gains, weights)) = knock.as_ref()
+                && let Some(&g) = gains.get(f.index as usize)
+                && g < 0.0
+            {
+                for (k, &w) in weights.iter().enumerate() {
+                    if w <= 0.0 {
+                        break;
+                    }
+                    let a = 10f32.powf(g * w / 20.0);
+                    for c in f.spectra.iter_mut() {
+                        c[k] *= a;
+                    }
+                }
+            }
             let after = energy(f.spectra);
             match class {
                 FrameClass::Pause if before > 0.0 && after > 0.0 => {

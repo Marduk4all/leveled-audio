@@ -20,7 +20,7 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     /// Dateien verarbeiten und in einen Ausgabeordner schreiben
-    Process(ProcessArgs),
+    Process(Box<ProcessArgs>),
     /// Dateien nur messen (Lautheit, True Peak, LRA, Rauschpegel), nichts schreiben
     Analyze(AnalyzeArgs),
     /// Rauschprofile
@@ -66,21 +66,49 @@ pub struct ProcessArgs {
     /// Ausgabeordner (wird bei Bedarf angelegt)
     #[arg(short = 'o', long = "output-dir")]
     pub output_dir: PathBuf,
-    /// Preset-Name (podcast-stereo, podcast-mono, ebu-r128) oder Pfad zu einer .toml-Datei
+    /// Preset: podcast-stereo (natürlich, Default), podcast-kraeftig (nahe Referenz), podcast-mono,
+    /// ebu-r128 oder Pfad zu einer .toml-Datei (siehe `leveled-audio preset list`)
     #[arg(long, default_value = "podcast-stereo")]
     pub preset: String,
     /// Einzelne Einstellung überschreiben, z. B. --set denoise.reduction_db=15 (mehrfach möglich)
     #[arg(long = "set", value_name = "SCHLÜSSEL=WERT")]
     pub overrides: Vec<String>,
-    /// Ziel-Lautheit in LUFS (überschreibt das Preset)
-    #[arg(long, allow_negative_numbers = true)]
+    /// Ziel-Lautheit in LUFS (Default −16). Höher = lauter; Plattformen normalisieren meist auf −14 bis −16
+    #[arg(long, allow_negative_numbers = true, value_name = "LUFS")]
     pub target_lufs: Option<f64>,
     /// Lautheit pro Datei oder gemeinsamer Gain für alle Dateien (Album)
     #[arg(long, value_enum)]
     pub loudness_mode: Option<LoudnessModeArg>,
-    /// True-Peak-Ceiling in dBTP (überschreibt das Preset)
-    #[arg(long, allow_negative_numbers = true)]
+    /// Obergrenze für Spitzen in dBTP (Default −1). Höher entlastet den Limiter, riskiert aber Verzerrungen nach MP3/AAC
+    #[arg(long, allow_negative_numbers = true, value_name = "DBTP")]
     pub ceiling_dbtp: Option<f64>,
+    /// Hochpass in Hz (Default 70): entfernt Rumpeln und Trittschall. Ab ≈ 100 Hz verlieren tiefe Stimmen Wärme
+    #[arg(long, value_name = "HZ")]
+    pub highpass: Option<f64>,
+    /// Keinen Hochpass
+    #[arg(long, conflicts_with = "highpass")]
+    pub no_highpass: bool,
+    /// Absenkung der Tiefen in erkannten Griffgeräuschen/Knacksern in dB (Default 15; 0 = nur erkennen).
+    /// Höher = leiser; gleichzeitige Sprache klingt dort kurz dünner
+    #[arg(long, value_name = "DB")]
+    pub knock_reduction: Option<f64>,
+    /// Keine Störgeräusch-Erkennung (Knackser zählen dann als Sprache und werden mitgelevelt)
+    #[arg(long, conflicts_with = "knock_reduction")]
+    pub no_knock: bool,
+    /// Kompressor in Prozent (Default 40 ≈ 1,5:1; 60 ≈ 2:1): fängt laute Stellen vor dem Limiter ab.
+    /// Höher = dichter, zu hoch klingt gepresst. 0 = aus
+    #[arg(long, value_name = "PROZENT")]
+    pub compression: Option<f64>,
+    /// Keinen Kompressor
+    #[arg(long, conflicts_with = "compression")]
+    pub no_compression: bool,
+    /// Pausen-Absenkung: Pegel der Sprechpausen in der fertigen Datei in dBFS, z. B. −60 (Default aus).
+    /// Pausen werden fast still; an Pausengrenzen kann das Rauschen hörbar „atmen“
+    #[arg(long, allow_negative_numbers = true, value_name = "DBFS")]
+    pub pause_floor: Option<f64>,
+    /// Keine Pausen-Absenkung (natürlicher Raumton bleibt)
+    #[arg(long, conflicts_with = "pause_floor")]
+    pub no_pause_floor: bool,
     /// Bittiefe der Ausgabe
     #[arg(long, value_enum)]
     pub bit_depth: Option<BitDepthArg>,
@@ -93,8 +121,9 @@ pub struct ProcessArgs {
     /// Keine Rauschreduktion
     #[arg(long)]
     pub no_denoise: bool,
-    /// Maximale Rauschabsenkung in dB (überschreibt das Preset)
-    #[arg(long)]
+    /// Maximale Rauschabsenkung in dB (Default 12). Höher = weniger Rauschen; ab ≈ 15–18 dB drohen
+    /// „blubbernde“ Artefakte und dumpfere Sprache
+    #[arg(long, value_name = "DB")]
     pub reduction_db: Option<f64>,
     /// Gain-Regel der Rauschreduktion
     #[arg(long, value_enum)]
@@ -102,7 +131,8 @@ pub struct ProcessArgs {
     /// Keinen Leveler (Angleichen unterschiedlich lauter Sprecher)
     #[arg(long)]
     pub no_leveler: bool,
-    /// Stärke des Levelers in Prozent, 0–100 (überschreibt das Preset)
+    /// Leveler in Prozent (Default 60): gleicht leise und laute Sprecher an. 100 = gleich laut,
+    /// 0 = Unterschiede bleiben. Höher klingt gleichmäßiger, aber weniger lebendig
     #[arg(long, value_name = "PROZENT")]
     pub leveler_strength: Option<f64>,
     /// Dieses Rauschprofil (JSON) für alle Dateien verwenden

@@ -26,6 +26,10 @@ pub struct FrameFeatures {
     pub flat_frac: Vec<f32>,
     /// K-gewichtete Leistung (BS.1770-Filter, Kanalmittel) in dB. Grundlage des Levelers.
     pub k_db: Vec<f32>,
+    /// Leistung im Sprachband 300–3400 Hz relativ zu den Tiefen 20–300 Hz (dB).
+    /// Griffgeräusche und Rumpeln sind tiefendominiert (≈ −20 dB), Sprache nicht
+    /// (≈ −5 … +5 dB), Zischlaute erst recht nicht (PLAN 3.13).
+    pub speech_to_low_db: Vec<f32>,
 }
 
 impl FrameFeatures {
@@ -135,6 +139,8 @@ pub struct FeatureExtractor {
     e_band: (usize, usize),
     flat_band: (usize, usize),
     flux_band: (usize, usize),
+    speech_band: (usize, usize),
+    low_band: (usize, usize),
     pow: Vec<f32>,
     prev_db: Vec<f32>,
     have_prev: bool,
@@ -153,6 +159,8 @@ impl FeatureExtractor {
             e_band: bin_range(100.0, 4000.0f64.min(nyq), sample_rate, fft_size),
             flat_band: bin_range(300.0, 6000.0f64.min(nyq), sample_rate, fft_size),
             flux_band: bin_range(100.0, 8000.0f64.min(nyq), sample_rate, fft_size),
+            speech_band: bin_range(300.0, 3400.0f64.min(nyq), sample_rate, fft_size),
+            low_band: bin_range(20.0, 300.0, sample_rate, fft_size),
             pow: vec![0.0; bins],
             prev_db: vec![0.0; bins],
             have_prev: false,
@@ -185,6 +193,10 @@ impl FeatureExtractor {
             .sum::<f64>()
             * self.scale;
         f.k_db.push((10.0 * (ek + 1e-20).log10()) as f32);
+        let sum = |(a, b): (usize, usize)| self.pow[a..b].iter().map(|v| *v as f64).sum::<f64>();
+        let (sb, lb) = (sum(self.speech_band), sum(self.low_band));
+        f.speech_to_low_db
+            .push((10.0 * ((sb + 1e-30) / (lb + 1e-30)).log10()) as f32);
 
         let (a, b) = self.flat_band;
         let tiny = 1e-20f64;

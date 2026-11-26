@@ -14,10 +14,6 @@ impl LevelerStage {
         LevelerStage { curve, lin }
     }
 
-    pub fn curve(&self) -> &LevelerCurve {
-        &self.curve
-    }
-
     /// Wendet die Kurve auf `n` Frames an; `first` ist der Eingangs-Sampleindex
     /// des ersten Frames (negativ während des Latenz-Vorlaufs).
     pub fn apply(&self, buf: &mut [Vec<f32>], n: usize, first: i64) {

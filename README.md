@@ -2,13 +2,15 @@
 
 Batch-Verarbeitung von Sprachaufnahmen (WAV) per Kommandozeile – offline, ohne Laufzeitabhängigkeiten.
 
-**Stand: Phase 4** – Rauschreduktion mit automatischem Rauschprofil, adaptiver Leveler,
-Loudness-Normalisierung (ITU-R BS.1770-4 / EBU R128, pro Datei oder als Album) und True-Peak-Limiter,
-Presets mit Schichtung, JSON-Report mit Schema, Release-Builds. Siehe [PLAN.md](PLAN.md).
+**Stand: Phase 5** – Hochpass, Rauschreduktion mit automatischem Rauschprofil, Erkennung und Absenkung
+von Griffgeräuschen, adaptiver Leveler, Kompressor, optionale Pausen-Absenkung, Loudness-Normalisierung
+(ITU-R BS.1770-4 / EBU R128, pro Datei oder als Album) und True-Peak-Limiter, Presets mit Schichtung,
+JSON-Report mit Schema, Release-Builds. Siehe [PLAN.md](PLAN.md).
 
 **Bedienungsanleitung:** [docs/ANLEITUNG.md](docs/ANLEITUNG.md) · **Report-Schema:** [docs/report.schema.json](docs/report.schema.json)
 
-Kette: Rauschreduktion → Leveler → Normalisierung → True-Peak-Limiter. Das Rauschprofil wird automatisch
+Kette: Hochpass → Rauschreduktion + Knackser-Absenkung → Leveler (+ Pausen-Absenkung) → Kompressor →
+Normalisierung → True-Peak-Limiter. Das Rauschprofil wird automatisch
 aus den leisesten stationären Sprechpausen jeder Datei bestimmt (Fallback: Minimum Statistics).
 Der Leveler gleicht unterschiedlich laute Sprecher und Phrasen an. Die Wechsel liegen in den Pausen,
 und Pausen werden nicht angehoben.
@@ -49,6 +51,12 @@ leveled-audio process staffel/ -o fertig/ --loudness-mode album
 # Eigenes Preset (fehlende Werte kommen vom Basis-Preset) und einzelne Overrides
 leveled-audio preset show ebu-r128 > mein.toml
 leveled-audio process aufnahmen/ -o fertig/ --preset mein.toml --set denoise.reduction_db=15
+
+# Kräftiger Klang (Pausen fast still, dichter; nahe Referenz) statt natürlich
+leveled-audio process aufnahmen/ -o fertig/ --preset podcast-kraeftig
+
+# Einzelne Regler (Empfehlungen und Wirkung: Anleitung, Abschnitt 4)
+leveled-audio process interview.wav -o fertig/ --pause-floor -60 --compression 60 --knock-reduction 20
 
 # Leveler stärker (Default 60 %) oder ganz aus
 leveled-audio process interview.wav -o fertig/ --leveler-strength 90

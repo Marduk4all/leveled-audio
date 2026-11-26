@@ -65,8 +65,13 @@ pub struct FileReport {
     pub input_clip_runs: u64,
     /// Gleichspannungsanteil je Kanal in dBFS (nur gemeldet, wenn > −50 dBFS).
     pub dc_offset_dbfs: Vec<Option<f64>>,
+    /// Grenzfrequenz des Hochpasses (Hz), falls aktiv.
+    pub highpass_hz: Option<f64>,
     pub denoise: Option<DenoiseReport>,
+    pub knock: Option<KnockReport>,
     pub leveler: Option<LevelerStats>,
+    pub gate: Option<GateReport>,
+    pub compressor: Option<CompressorReport>,
     /// Angewendeter Normalisierungs-Gain (inklusive Korrektur).
     pub normalization_gain_db: Option<f64>,
     /// Zusätzlicher Gain der Korrekturiteration, falls eine nötig war.
@@ -93,4 +98,36 @@ pub struct AlbumReport {
     /// Gemeinsame Lautheit der Ausgabe.
     pub loudness_out_lufs: Option<f64>,
     pub warnings: Vec<String>,
+}
+
+/// Störgeräusche (Griffgeräusche, Knackser): erkannt und abgesenkt.
+#[derive(Debug, Clone, Serialize)]
+pub struct KnockReport {
+    pub regions: usize,
+    pub duration_s: f64,
+    /// Absenkung der Tiefen in diesen Bereichen (0 = nur erkannt).
+    pub reduction_db: f64,
+}
+
+/// Pausen-Absenkung (Noisefloor-Regler).
+#[derive(Debug, Clone, Serialize)]
+pub struct GateReport {
+    pub floor_dbfs: f64,
+    /// Pausenpegel in der Ausgabe ohne Pausen-Absenkung (dBFS).
+    pub pause_level_dbfs: Option<f64>,
+    /// Angewendete Absenkung (dB, ≥ 0).
+    pub attenuation_db: f64,
+    /// Anteil der Zeit mit Absenkung (0–1).
+    pub gated_fraction: f64,
+}
+
+/// Kompressor.
+#[derive(Debug, Clone, Serialize)]
+pub struct CompressorReport {
+    /// Schwelle bezogen auf die Ausgabe (dBFS RMS).
+    pub threshold_dbfs: f64,
+    pub ratio: f64,
+    pub max_gain_reduction_db: f64,
+    /// Anteil der Zeit mit ≥ 0,5 dB Absenkung (0–1).
+    pub active_fraction: f64,
 }

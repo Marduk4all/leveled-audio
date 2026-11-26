@@ -31,6 +31,15 @@ enum NoiseKind {
     Fan,
 }
 
+/// Kette ohne die Phase-5-Stufen vor bzw. nach der Rauschreduktion
+/// (Hochpass, Kompressor), damit die Rauschreduktion isoliert geprüft wird.
+fn base() -> Settings {
+    let mut s = Settings::default();
+    s.highpass.enabled = false;
+    s.compressor.enabled = false;
+    s
+}
+
 fn noise(kind: NoiseKind, rms_dbfs: f64, secs: f64, seed: u64) -> Vec<f32> {
     match kind {
         NoiseKind::White => white_noise(RATE, 1, rms_dbfs, secs, seed).remove(0),
@@ -205,7 +214,7 @@ fn profile_matches_known_noise_spectrum() {
         let sc = scene(kind, 20.0, 11);
         let path = dir.join("noisy.wav");
         write_mono(&path, &sc.noisy);
-        let prof = learn(&path, &Settings::default());
+        let prof = learn(&path, &base());
         assert_eq!(prof.source, ProfileSource::Auto, "{kind:?}");
         assert!(
             prof.confidence > 0.7,
@@ -257,7 +266,7 @@ fn profile_robust_against_silence_fades_breaths_and_clicks() {
     assert!(placed >= 3, "zu wenige Bursts platziert ({placed})");
     let path = dir.join("noisy.wav");
     write_mono(&path, &x);
-    let prof = learn(&path, &Settings::default());
+    let prof = learn(&path, &base());
     assert_eq!(prof.source, ProfileSource::Auto);
     let est = prof.power_for(RATE, n, 1).remove(0);
     let err = max_band_error_db(&est, &true_noise_power(&sc.noise, n), n);
@@ -290,7 +299,7 @@ fn continuous_speech_falls_back_to_minimum_statistics() {
     let x: Vec<f32> = speech.iter().zip(&nz).map(|(a, b)| a + b).collect();
     let path = dir.join("noisy.wav");
     write_mono(&path, &x);
-    let prof = learn(&path, &Settings::default());
+    let prof = learn(&path, &base());
     assert_eq!(prof.source, ProfileSource::Minstat);
     let est = prof.power_for(RATE, n, 1).remove(0);
     let truth = true_noise_power(&nz, n);
@@ -307,9 +316,7 @@ fn denoise_quality_at_20db_snr() {
     let sc = scene(NoiseKind::Pink, 20.0, 41);
     let path = dir.join("noisy.wav");
     write_mono(&path, &sc.noisy);
-    let power = learn(&path, &Settings::default())
-        .power_for(RATE, n, 1)
-        .remove(0);
+    let power = learn(&path, &base()).power_for(RATE, n, 1).remove(0);
     let (active, pause) = masks(&sc.speech);
     let all = vec![true; sc.noisy.len()];
 
@@ -373,7 +380,7 @@ fn delta_plus_output_reconstructs_input() {
     ];
     let input = dir.join("in.wav");
     write_wav(&input, RATE, SampleFormat::Float32, &stereo);
-    let mut s = Settings::default();
+    let mut s = base();
     s.leveler.enabled = false;
     s.loudness.enabled = false;
     s.limiter.enabled = false;
@@ -415,7 +422,7 @@ fn profile_export_import_and_forced_profile() {
     let sc = scene(NoiseKind::Pink, 20.0, 61);
     let a = dir.join("a.wav");
     write_mono(&a, &sc.noisy);
-    let prof = learn(&a, &Settings::default());
+    let prof = learn(&a, &base());
     let json = dir.join("p.json");
     save_profile(&json, &prof).unwrap();
     let back = load_profile(&json).unwrap();
@@ -432,7 +439,7 @@ fn profile_export_import_and_forced_profile() {
     let r = process_file(
         &b,
         &dir.join("b_out.wav"),
-        &Settings::default(),
+        &base(),
         &opts,
         0,
         &NoProgress,

@@ -18,6 +18,10 @@ pub enum FrameClass {
     Other,
     /// Digitale Stille (Nullen, eingefrorene Samples).
     Silence,
+    /// Aktiv, aber kaum Energie im Sprachband: tieffrequente Störung wie
+    /// Griffgeräusche oder Rumpeln (PLAN 3.13). Wird nicht gelevelt und in der
+    /// Rauschreduktion in den Tiefen abgesenkt.
+    Noise,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -35,6 +39,15 @@ pub struct VadParams {
     pub voiced_flatness: f32,
     pub min_voiced_frames: usize,
     pub silence_db: f32,
+    /// Aktive Frames, deren Sprachband (300–3400 Hz) um mehr als diesen Wert
+    /// unter den Tiefen (20–300 Hz) liegt, gelten als Störgeräusch
+    /// (`FrameClass::Noise`). `None` = keine Störgeräusch-Erkennung.
+    pub noise_max_speech_to_low_db: Option<f32>,
+    /// Lücken zwischen Störgeräusch-Frames bis zu dieser Dauer werden geschlossen.
+    pub noise_close_gap_ms: f64,
+    /// Kürzere Störgeräusch-Bereiche innerhalb von Sprache bleiben Sprache
+    /// (einzelne tiefe Frames, z. B. Nasale, sollen Phrasen nicht teilen).
+    pub noise_min_ms: f64,
 }
 
 impl Default for VadParams {
@@ -51,6 +64,9 @@ impl Default for VadParams {
             voiced_flatness: 0.4,
             min_voiced_frames: 3,
             silence_db: -90.0,
+            noise_max_speech_to_low_db: Some(-15.0),
+            noise_close_gap_ms: 70.0,
+            noise_min_ms: 40.0,
         }
     }
 }
@@ -191,7 +207,91 @@ pub fn classify(f: &FrameFeatures, p: &VadParams) -> Vec<FrameClass> {
             }
         }
     }
+    if let Some(thr) = p.noise_max_speech_to_low_db {
+        mark_noise(f, p, thr, &active, &mut class);
+    }
     class
+}
+
+/// Störgeräusche (PLAN 3.13): aktive, tiefendominierte Frames werden `Noise`. Kurze Lücken dazwischen werden geschlossen. Sprachbereiche,
+/// in denen danach keine stimmhaften Sprachband-Frames mehr übrig sind, waren
+/// nur Störgeräusch samt Pre-Roll/Hangover und werden zu Pause.
+fn mark_noise(
+    f: &FrameFeatures,
+    p: &VadParams,
+    thr: f32,
+    active: &[bool],
+    class: &mut [FrameClass],
+) {
+    let n = class.len();
+    let noisy = |k: usize| active[k] && f.speech_to_low_db[k] < thr;
+    let speechy = |k: usize| active[k] && f.speech_to_low_db[k] >= thr;
+    for k in 0..n {
+        if noisy(k) && class[k] != FrameClass::Silence {
+            class[k] = FrameClass::Noise;
+        }
+    }
+    // Lücken schließen (nur über Frames ohne Sprachband-Energie).
+    let gap = f.frames_for(p.noise_close_gap_ms / 1000.0);
+    let mut last_noise: Option<usize> = None;
+    for k in 0..n {
+        if class[k] == FrameClass::Noise {
+            if let Some(l) = last_noise
+                && k - l > 1
+                && k - l - 1 <= gap
+                && (l + 1..k).all(|i| !speechy(i) && class[i] != FrameClass::Silence)
+            {
+                class[l + 1..k]
+                    .iter_mut()
+                    .for_each(|c| *c = FrameClass::Noise);
+            }
+            last_noise = Some(k);
+        } else if speechy(k) {
+            last_noise = None;
+        }
+    }
+    // Zu kurze Störgeräusch-Bereiche zwischen Sprache zurücksetzen.
+    let min_f = f.frames_for(p.noise_min_ms / 1000.0);
+    let mut k = 0;
+    while k < n {
+        if class[k] != FrameClass::Noise {
+            k += 1;
+            continue;
+        }
+        let s = k;
+        while k < n && class[k] == FrameClass::Noise {
+            k += 1;
+        }
+        let speech_before = s > 0 && class[s - 1] == FrameClass::Speech;
+        let speech_after = k < n && class[k] == FrameClass::Speech;
+        if k - s < min_f && (speech_before || speech_after) {
+            class[s..k].iter_mut().for_each(|c| *c = FrameClass::Speech);
+        }
+    }
+    // Sprachbereiche ohne verbleibende stimmhafte Sprachband-Frames auflösen.
+    let mut k = 0;
+    while k < n {
+        if class[k] != FrameClass::Speech {
+            k += 1;
+            continue;
+        }
+        let s = k;
+        while k < n && class[k] == FrameClass::Speech {
+            k += 1;
+        }
+        let voiced = (s..k)
+            .filter(|&i| speechy(i) && f.flatness[i] < p.voiced_flatness)
+            .count();
+        if voiced < p.min_voiced_frames {
+            for i in s..k {
+                class[i] = if active[i] {
+                    FrameClass::Other
+                } else {
+                    FrameClass::Pause
+                };
+            }
+        }
+    }
 }
 
 #[cfg(test)]

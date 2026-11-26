@@ -3,11 +3,16 @@
 leveled-audio bearbeitet Sprachaufnahmen (WAV) im Stapel, offline und ohne weitere Installation:
 
 ```
-Rauschreduktion → Leveler → Loudness-Normalisierung → True-Peak-Limiter → Ausgabe
+Hochpass → Rauschreduktion + Knackser-Absenkung → Leveler (+ Pausen-Absenkung)
+         → Kompressor → Loudness-Normalisierung → True-Peak-Limiter → Ausgabe
 ```
 
+- **Hochpass:** Entfernt Rumpeln und Trittschall unter etwa 70 Hz.
 - **Rauschreduktion:** Das Rauschprofil wird automatisch aus den ruhigsten Sprechpausen jeder Datei bestimmt und spektral abgezogen.
+- **Knackser-Absenkung:** Erkennt Griffgeräusche und Knackser (tieffrequente Störungen ohne Sprachanteil) und senkt dort die Tiefen ab. Der Leveler hebt sie nicht an.
 - **Leveler:** Gleicht unterschiedlich laute Sprecher und Phrasen an. Die Gain-Wechsel liegen in den Pausen, Pausen werden nicht angehoben.
+- **Pausen-Absenkung** (optional, Default aus): Senkt Sprechpausen auf einen Zielpegel ab.
+- **Kompressor:** Fängt kurze laute Stellen (Lachen, Ausrufe) sanft ab, bevor der Limiter hart begrenzen muss.
 - **Normalisierung:** Bringt die integrierte Lautheit (ITU-R BS.1770-4 / EBU R128) auf das Ziel, pro Datei oder als Album.
 - **True-Peak-Limiter:** Hält die Obergrenze mit 8-fachem Oversampling ein (Default −1 dBTP).
 
@@ -56,9 +61,9 @@ leveled-audio analyze aufnahmen/ -r
 Nach der Verarbeitung erscheint eine Tabelle mit allen Dateien (Beispiel):
 
 ```
-Datei     LUFS  dBTP │   dBFS Konf    NR │ Leveler │   LUFS  dBTP  LRA │  Gain  Lim  Status
-          ─ Eingang ── │ ─── Rauschen ──── │         │ ──── Ausgang ──── │
-004.wav  -25.4  -0.7 │  -35.2 0.73 -11.7 │   -2…+6 │  -16.0  -1.1  4.2 │  +9.6  4.6  ok
+Datei     LUFS  dBTP │   dBFS Konf    NR  Kn │ Leveler │   LUFS  dBTP  LRA │  Gain  Kmp  Lim  Status
+          ─ Eingang ── │ ───── Rauschen ────── │         │ ──── Ausgang ──── │
+004.wav  -25.4  -0.7 │  -54.2 0.83 -11.3  21 │   -3…+7 │  -16.3  -1.1  3.3 │ +10.6  0.4  3.6  ok
 ```
 
 | Spalte | Bedeutung |
@@ -67,12 +72,13 @@ Datei     LUFS  dBTP │   dBFS Konf    NR │ Leveler │   LUFS  dBTP  LRA │
 | Rauschen dBFS | Pegel des Rauschprofils |
 | Konf | Konfidenz des Profils, 0–1. **MS** heißt, dass keine ruhigen Pausen gefunden wurden und Minimum Statistics als Ersatz dient. **imp** heißt, das Profil wurde importiert. |
 | NR | mittlere Absenkung in den Pausen (dB) |
+| Kn | Anzahl erkannter Knackser bzw. Griffgeräusche |
 | Leveler | Gain-Bereich des Levelers in Sprache (dB) |
 | Ausgang | Lautheit, True Peak und Loudness Range der Ausgabe |
 | Gain | Normalisierungs-Gain (dB) |
-| Lim | größte Absenkung durch den Limiter (dB) |
+| Kmp / Lim | größte Absenkung durch Kompressor bzw. Limiter (dB) |
 
-Darunter stehen Hinweise, z. B. zu übersteuerten Eingaben oder zu einer Lautheitskorrektur.
+Darunter stehen Hinweise, z. B. zu übersteuerten Eingaben, zur Pausen-Absenkung oder zu einer Lautheitskorrektur.
 
 ---
 
@@ -92,19 +98,23 @@ Eingaben können einzelne WAV-Dateien und Ordner sein. Mit `-r` werden Unterordn
 
 | Option | Wirkung |
 |---|---|
-| `--preset <name or datei.toml>` | `podcast-stereo` (Default, −16 LUFS), `podcast-mono` (−19), `ebu-r128` (−23) oder eigene Datei |
+| `--preset <name or datei.toml>` | `podcast-stereo` (Default, natürlich, −16 LUFS), `podcast-kraeftig` (nahe Referenz), `podcast-mono` (−19), `ebu-r128` (−23) oder eigene Datei |
 | `--target-lufs <LUFS>` | Ziel-Lautheit, z. B. `--target-lufs -18` |
 | `--ceiling-dbtp <dBTP>` | Obergrenze des True Peak, z. B. `--ceiling-dbtp -2` |
-| `--loudness-mode per-file\|album` | Lautheit pro Datei (Default) oder gemeinsamer Gain, siehe Abschnitt 5 |
+| `--loudness-mode per-file\|album` | Lautheit pro Datei (Default) oder gemeinsamer Gain, siehe Abschnitt 6 |
 | `--bit-depth same\|16\|24\|32f` | Bittiefe der Ausgabe (Default `same`; 32-bit-int-Eingaben werden zu 24 bit) |
 | `--reduction-db <dB>` | maximale Rauschabsenkung (Default 12) |
 | `--leveler-strength <0–100>` | Stärke des Levelers in Prozent (Default 60) |
-| `--no-denoise`, `--no-leveler`, `--no-normalize`, `--no-limiter` | einzelne Stufen abschalten |
-| `--set <SCHLÜSSEL=WERT>` | beliebige Einstellung überschreiben, mehrfach möglich, siehe Abschnitt 4 |
+| `--highpass <Hz>` | Hochpass-Frequenz (Default 70) |
+| `--knock-reduction <dB>` | Absenkung der Tiefen in Knacksern (Default 15; 0 = nur erkennen) |
+| `--compression <0–100>` | Kompressor in Prozent (Default 40) |
+| `--pause-floor <dBFS>` | Pausen-Absenkung einschalten, Zielpegel der Pausen, z. B. `-60` |
+| `--no-denoise`, `--no-leveler`, `--no-normalize`, `--no-limiter`, `--no-highpass`, `--no-knock`, `--no-compression`, `--no-pause-floor` | einzelne Stufen abschalten |
+| `--set <SCHLÜSSEL=WERT>` | beliebige Einstellung überschreiben, mehrfach möglich, siehe Abschnitt 5 |
 | `--naming "<muster>"` | Dateiname der Ausgabe; Platzhalter `{stem}`, `{ext}`, `{preset}`, `{lufs}` |
 | `--overwrite` / `--skip-existing` | vorhandene Zieldateien ersetzen bzw. überspringen (ohne beides: Abbruch) |
 | `-j <N>` | Anzahl paralleler Dateien (Default: Anzahl Kerne, höchstens 4) |
-| `--report-json <datei>` | Report als JSON, siehe Abschnitt 6 |
+| `--report-json <datei>` | Report als JSON, siehe Abschnitt 7 |
 | `--noise-profile <profil.json>` | dieses Rauschprofil für alle Dateien verwenden |
 | `--save-profiles <ordner>` | automatisch bestimmte Profile als `<name>.noise.json` speichern |
 | `--export-delta` | entfernte Anteile zusätzlich als `<name>.delta.wav` schreiben (zum Abhören) |
@@ -128,7 +138,34 @@ leveled-audio process interview.wav -o fertig/ --naming "{stem}_{lufs}"
 
 ---
 
-## 4. Presets und Einstellungen
+## 4. Regler: Empfehlungen und Wirkung
+
+**Fix oder per Analyse?** Die Werte der Regler sind fest. Sie stehen im Preset, gelten für alle Dateien gleich und machen das Ergebnis reproduzierbar. Fast alle Regler beschreiben aber eine Absicht relativ zur jeweiligen Datei:
+- Die Rauschreduktion arbeitet mit dem automatisch gefundenen Rauschprofil.
+- Der Leveler gleicht auf den Sprachpegel der Datei an.
+- Die Kompressor-Schwelle liegt 8 dB über diesem Sprachpegel.
+- Die Pausen-Absenkung rechnet ihre Tiefe aus, damit die Pausen ihr Ziel erreichen.
+- Die Knackser-Erkennung bewertet jeden Abschnitt einzeln.
+
+Was tatsächlich angewendet wurde, steht im Report. Absolut gemeint sind nur Ziel-Lautheit, Spitzen-Grenze und Hochpass-Frequenz.
+
+| Regler | Natürlich (`podcast-stereo`, Default) | Kräftig (`podcast-kraeftig`) | Was sich ändert |
+|---|---|---|---|
+| `--target-lufs` | −16 | −16 | Gesamtlautheit. Plattformen normalisieren meist auf −14 bis −16. |
+| `--ceiling-dbtp` | −1 | −1 | Obergrenze für Spitzen. Höher entlastet den Limiter, riskiert aber Verzerrungen nach MP3/AAC. |
+| `--highpass` | 70 Hz | 80 Hz | Entfernt Rumpeln. Ab etwa 100 Hz verlieren tiefe Stimmen Wärme. |
+| `--knock-reduction` | 15 dB | 20 dB | Knackser leiser. Gleichzeitige Sprache klingt dort kurz dünner. |
+| `--reduction-db` | 12 dB | 15 dB | Weniger Rauschen. Ab etwa 15–18 dB drohen „blubbernde“ Artefakte. |
+| `--leveler-strength` | 60 % | 80 % | Sprecher gleichmäßiger, aber weniger lebendig. |
+| `--compression` | 40 % (1,5:1) | 60 % (2:1) | Laute Stellen dichter. Zu hoch klingt gepresst. |
+| `--pause-floor` | aus | −60 dBFS | Pausen fast still. Kann an Pausengrenzen „atmen“. |
+| `--loudness-mode` | per-file | per-file | `album` nur für Folgen einer Produktion. |
+
+`leveled-audio preset show <name>` gibt ein Preset mit diesen Kurzbeschreibungen als Kommentaren aus. `leveled-audio process --help` beschreibt jeden Regler.
+
+---
+
+## 5. Presets und Einstellungen
 
 ### Reihenfolge der Schichten
 
@@ -176,7 +213,9 @@ leveled-audio process a.wav -o fertig/ --set denoise.reduction_db=15 --set loudn
 
 | Schlüssel | Default | Bereich | Bedeutung |
 |---|---|---|---|
-| `denoise.enabled` | `true` | | Rauschreduktion an/aus |
+| `highpass.enabled` | `true` | | Hochpass an/aus |
+| `highpass.frequency_hz` | 70 | 20–200 | Grenzfrequenz (Hz) |
+| `denoise.enabled` | `true` | | Rauschreduktion an/aus (ohne sie auch keine Knackser-Absenkung) |
 | `denoise.gain_rule` | `wiener-dd` | `wiener-dd`, `subtract` | Gain-Regel; `wiener-dd` erzeugt weniger „Musical Noise“ |
 | `denoise.reduction_db` | 12 | 0–40 | maximale Absenkung (dB) |
 | `denoise.oversubtraction` | 1,3 | 0,5–4 | Überschätzung des Rauschens |
@@ -189,15 +228,31 @@ leveled-audio process a.wav -o fertig/ --set denoise.reduction_db=15 --set loudn
 | `denoise.profile.target_duration_s` | 2 | ≥ min | Menge, ab der das Profil voll vertrauenswürdig ist |
 | `denoise.profile.statistic` | `trimmed` | `mean`, `trimmed`, `median` | Mittelung über die Pausen |
 | `denoise.profile.min_confidence` | 0,4 | 0–1 | darunter Minimum Statistics als Ersatz |
+| `knock.enabled` | `true` | | Knackser/Griffgeräusche erkennen |
+| `knock.max_speech_to_low_db` | −15 | −30 … −5 | Sprachband (300–3400 Hz) so weit unter den Tiefen (20–300 Hz) ⇒ Störgeräusch |
+| `knock.reduction_db` | 15 | 0–40 | Absenkung der Tiefen in Knacksern; 0 = nur erkennen |
 | `leveler.enabled` | `true` | | Leveler an/aus |
 | `leveler.strength` | 0,6 | 0–1 | 0 = keine Wirkung, 1 = volle Angleichung |
 | `leveler.max_boost_db` | 10 | 0–20 | größte Anhebung |
 | `leveler.max_cut_db` | 10 | 0–20 | größte Absenkung |
 | `leveler.pause_max_boost_db` | 0 | −10–10 | Obergrenze des Gains in langen Pausen |
 | `leveler.slew_db_per_s` | 2 | 0,5–10 | größte Gain-Änderung innerhalb einer Phrase |
+| `gate.enabled` | `false` | | Pausen-Absenkung an/aus |
+| `gate.floor_dbfs` | −60 | −90 … −30 | Zielpegel der Pausen in der fertigen Datei |
+| `gate.max_attenuation_db` | 30 | 0–60 | höchstens so viel zusätzliche Absenkung |
+| `gate.min_pause_ms` | 400 | 100–2000 | kürzere Pausen bleiben unverändert |
+| `gate.hold_ms` | 50 | 0–500 | Halten nach dem letzten Laut, bevor ausgeblendet wird |
+| `gate.fade_out_ms` | 150 | 10–1000 | Ausblenden in die Pause; länger = sanfter, aber später leise |
+| `gate.fade_in_ms` | 50 | 10–500 | Aufblenden vor dem nächsten Wort |
+| `gate.pre_open_ms` | 50 | 0–200 | so viel früher vor Sprachbeginn wieder ganz offen |
+| `compressor.enabled` | `true` | | Kompressor an/aus |
+| `compressor.amount` | 0,4 | 0–1 | 0,4 = 1,5:1, 0,6 = 2:1, 1 = 6:1 |
+| `compressor.threshold_above_ref_db` | 8 | 0–20 | Schwelle über dem Sprachpegel der Datei |
+| `compressor.attack_ms` | 5 | 0,5–50 | Ansprechzeit |
+| `compressor.release_ms` | 150 | 20–1000 | Rückstellzeit |
 | `loudness.enabled` | `true` | | Normalisierung an/aus |
 | `loudness.target_lufs` | −16 | −70 bis −5 | Ziel-Lautheit |
-| `loudness.mode` | `per-file` | `per-file`, `album` | siehe Abschnitt 5 |
+| `loudness.mode` | `per-file` | `per-file`, `album` | siehe Abschnitt 6 |
 | `limiter.enabled` | `true` | | Limiter an/aus |
 | `limiter.ceiling_dbtp` | −1 | −20–0 | Obergrenze True Peak |
 | `limiter.lookahead_ms` | 5 | 0,5–50 | Vorausschau |
@@ -208,7 +263,7 @@ leveled-audio process a.wav -o fertig/ --set denoise.reduction_db=15 --set loudn
 
 ---
 
-## 5. Lautheit: pro Datei oder als Album
+## 6. Lautheit: pro Datei oder als Album
 
 **Pro Datei** (Default): Jede Datei trifft das Ziel für sich.
 
@@ -216,11 +271,11 @@ leveled-audio process a.wav -o fertig/ --set denoise.reduction_db=15 --set loudn
 
 Dateien mit Fehlern und übersprungene Dateien (`--skip-existing`) zählen nicht zur Album-Lautheit.
 
-**Korrektur bei starkem Limiting:** Greift der Limiter stark ein, liegt die Lautheit nach dem Rendern unter dem Ziel. Weicht sie um mehr als 0,5 LU ab, rendert leveled-audio die Datei bzw. im Album-Modus alle Dateien mit angepasstem Gain neu. Das passiert höchstens zweimal. Die Tabelle nennt die Korrektur unter „Hinweise“. Bei typischer Sprache mit −16 LUFS ist keine Korrektur nötig.
+**Korrektur bei starkem Limiting:** Greift der Limiter ein, liegt die Lautheit etwas unter dem Ziel. leveled-audio schätzt diesen Verlust schon beim Messen und gleicht ihn im Gain aus. Weicht die fertige Datei trotzdem um mehr als 0,3 LU ab, rendert leveled-audio sie mit angepasstem Gain neu, im Album-Modus alle Dateien. Das passiert höchstens zweimal. Größere Korrekturen (ab 0,5 dB) nennt die Tabelle unter „Hinweise“.
 
 ---
 
-## 6. JSON-Report
+## 7. JSON-Report
 
 `--report-json report.json` bei `process` bzw. `--json report.json` bei `analyze` schreibt alle Messwerte maschinenlesbar. Das Format ist in `report.schema.json` beschrieben (JSON Schema 2020-12).
 
@@ -232,7 +287,7 @@ Dateien mit Fehlern und übersprungene Dateien (`--skip-existing`) zählen nicht
 
 ---
 
-## 7. Sicherheit, Abbruch, Exit-Codes
+## 8. Sicherheit, Abbruch, Exit-Codes
 
 - Eingabedateien werden nie überschrieben, auch nicht mit `--overwrite`.
 - Ausgaben entstehen zuerst als `<name>.partial` und werden erst nach Erfolg umbenannt. Es bleiben also keine halben Dateien zurück.
@@ -250,12 +305,12 @@ Gleiche Eingabe, gleiche Einstellungen und gleiches Binary ergeben byte-identisc
 
 ---
 
-## 8. Formate und Grenzen
+## 9. Formate und Grenzen
 
 - **Eingabe:** WAV und RF64, PCM 16/24/32 bit int und 32 bit float, Mono und Stereo, übliche Abtastraten (getestet mit 16–96 kHz).
 - **Ausgabe:** WAV mit 16/24 bit oder 32 bit float. Ab 4 GiB wird automatisch RF64 geschrieben.
 - **Lange Dateien:** Der Speicherbedarf ist nahezu konstant, eine 3-Stunden-Stereodatei braucht etwa 100 MB. Im Album-Modus bleiben bis zum Rendern je Datei rund 10 MB pro Stunde Audio im Speicher.
-- **Geschwindigkeit:** Auf einem aktuellen Rechner etwa 60–70× Echtzeit pro Datei mit allen Stufen. Mehrere Dateien laufen parallel.
+- **Geschwindigkeit:** Auf einem aktuellen Rechner etwa 55× Echtzeit pro Datei mit allen Stufen (gemessen an einer 1-Stunden-Stereodatei). Sehr kurze Dateien mit nachträglicher Lautheitskorrektur sind langsamer. Mehrere Dateien laufen parallel.
 - **Nicht reparierbar:** Bereits übersteuerte (geclippte) Eingaben. Sie werden erkannt und gemeldet.
 - **Bekannte Eigenheiten:**
   - Musik und Jingles werden mitgelevelt.
@@ -263,10 +318,16 @@ Gleiche Eingabe, gleiche Einstellungen und gleiches Binary ergeben byte-identisc
 
 ---
 
-## 9. Häufige Fragen
+## 10. Häufige Fragen
 
 **Die Konfidenz ist niedrig oder „MS“ steht in der Tabelle.**
 In der Aufnahme gibt es kaum ruhige Pausen. Hilfreich ist eine kurze Raumton-Aufnahme: Lerne daraus ein Profil mit `profile learn` und verwende es mit `--noise-profile`.
+
+**Knackser oder Griffgeräusche sind noch zu hören.**
+Erhöhe `--knock-reduction` (z. B. 25). Wird ein Knackser nicht erkannt, weil er auch viel Energie im Sprachband hat, hilft ein höherer Wert für `--set knock.max_speech_to_low_db=-12`. Dann steigt aber das Risiko, dass sehr tiefe Sprachlaute mit abgesenkt werden.
+
+**Die Pausen sollen leiser sein.**
+Nutze `--pause-floor -60` oder das Preset `podcast-kraeftig`. Hört man das Rauschen an den Pausengrenzen kommen und gehen, wähle ein höheres Ziel (z. B. −55) oder senke die Rauschreduktion zusätzlich mit `--reduction-db 15`.
 
 **Die Rauschreduktion klingt blubbernd oder metallisch.**
 Senke `--reduction-db` (z. B. auf 8). Höre mit `--export-delta`, was entfernt wird. In der Delta-Datei sollte keine Sprache zu hören sein.

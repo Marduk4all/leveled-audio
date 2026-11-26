@@ -67,6 +67,13 @@ fn leveler_only(strength: f64) -> Settings {
     s.limiter.enabled = false;
     s.output.bit_depth = BitDepth::F32;
     s.output.dither = DitherMode::Off;
+    s.highpass.enabled = false;
+    s.compressor.enabled = false;
+    // Die synthetische Stimme ist unrealistisch tiefenlastig (Sprachband ≈ 16 dB
+    // unter den Tiefen; echte Sprache −14 … +10 dB, Median ≈ 0) und würde als
+    // Störgeräusch erkannt. Der Leveler wird daher ohne Störgeräusch-Erkennung
+    // geprüft; die Erkennung hat eigene Tests (tests/phase5.rs).
+    s.knock.enabled = false;
     s.leveler.strength = strength;
     s
 }
@@ -196,6 +203,7 @@ fn zero_strength_is_bit_identical_to_bypass() {
     let input = write_input(&dir, &d);
     for denoise in [true, false] {
         let mut off = Settings::default();
+        off.knock.enabled = false;
         off.denoise.enabled = denoise;
         off.leveler.enabled = false;
         let mut zero = off.clone();
@@ -218,24 +226,26 @@ fn full_chain_with_leveler_hits_target() {
 
     // Ohne Limiter: Pass 2 misst nach dem Leveler, das Ziel wird exakt getroffen.
     let mut s = Settings::default();
+    s.knock.enabled = false;
     s.limiter.enabled = false;
     s.output.bit_depth = BitDepth::F32;
     let r = run(&input, &out, &s);
     let i = r.loudness_out.unwrap().integrated_lufs.unwrap();
     assert!((i + 16.0).abs() <= 0.1, "ohne Limiter {i:.2} LUFS");
 
-    // Volle Kette: True Peak eingehalten. Die synthetische Stimme ist sehr
-    // spitz (Limiter ≈ 30 % der Zeit aktiv) und verliert im ersten Durchlauf
-    // ≈ 0,55 LU; die Korrekturiteration bringt sie in die Toleranz.
-    let r = run(&input, &out, &Settings::default());
+    // Volle Kette: True Peak eingehalten, Ziel auf ±0,3 LU (Korrekturschwelle).
+    // Die synthetische Stimme ist sehr spitz; seit Phase 5 fängt der Kompressor
+    // einen Teil ab, sonst greift die Korrekturiteration.
+    let mut s = Settings::default();
+    s.knock.enabled = false;
+    let r = run(&input, &out, &s);
     let o = r.loudness_out.unwrap();
     let i = o.integrated_lufs.unwrap();
     eprintln!(
         "{i:.2} LUFS, Korrektur {:?}, Limiter {:?}, Leveler {:?}",
         r.loudness_correction_db, r.limiter, r.leveler
     );
-    assert!((i + 16.0).abs() <= 0.5, "{i:.2} LUFS");
-    assert!(r.loudness_correction_db.is_some_and(|c| c > 0.0));
+    assert!((i + 16.0).abs() <= 0.3, "{i:.2} LUFS");
     assert!(
         r.warnings.iter().all(|w| !w.contains("verfehlt")),
         "{:?}",

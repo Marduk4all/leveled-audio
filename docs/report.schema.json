@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "leveled-audio JSON-Report",
-  "description": "Report von `leveled-audio process --report-json` und `leveled-audio analyze --json`. Dateien stehen in Eingabereihenfolge. Werte, die ein Durchgang nicht ermittelt, sind null.",
+  "description": "Report von `leveled-audio process --report-json` und `leveled-audio analyze --json`. Dateien stehen in Eingabereihenfolge. Werte, die ein Durchgang nicht ermittelt, sind null. Schema-Version 2 (Phase 5): Hochpass, Störgeräusche, Pausen-Absenkung, Kompressor.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -16,7 +16,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 1
+      "const": 2
     },
     "tool": {
       "const": "leveled-audio"
@@ -342,8 +342,12 @@
         "loudness_in",
         "input_clip_runs",
         "dc_offset_dbfs",
+        "highpass_hz",
         "denoise",
+        "knock",
         "leveler",
+        "gate",
+        "compressor",
         "normalization_gain_db",
         "loudness_correction_db",
         "limiter",
@@ -405,6 +409,12 @@
             ]
           }
         },
+        "highpass_hz": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
         "denoise": {
           "oneOf": [
             {
@@ -415,10 +425,40 @@
             }
           ]
         },
+        "knock": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/knock"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "leveler": {
           "oneOf": [
             {
               "$ref": "#/$defs/leveler"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gate": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/gate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "compressor": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/compressor"
             },
             {
               "type": "null"
@@ -634,14 +674,34 @@
       "type": "object",
       "description": "Effektive Einstellungen (Aufbau wie eine Preset-Datei, vollständig).",
       "required": [
+        "highpass",
         "denoise",
+        "knock",
         "leveler",
+        "gate",
+        "compressor",
         "loudness",
         "limiter",
         "output"
       ],
       "additionalProperties": false,
       "properties": {
+        "highpass": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "frequency_hz"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "frequency_hz": {
+              "type": "number"
+            }
+          }
+        },
         "denoise": {
           "type": "object",
           "required": [
@@ -731,6 +791,26 @@
             }
           }
         },
+        "knock": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "max_speech_to_low_db",
+            "reduction_db"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "max_speech_to_low_db": {
+              "type": "number"
+            },
+            "reduction_db": {
+              "type": "number"
+            }
+          }
+        },
         "leveler": {
           "type": "object",
           "additionalProperties": false,
@@ -761,6 +841,76 @@
               "type": "number"
             },
             "slew_db_per_s": {
+              "type": "number"
+            }
+          }
+        },
+        "gate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "floor_dbfs",
+            "max_attenuation_db",
+            "min_pause_ms",
+            "hold_ms",
+            "pre_open_ms",
+            "fade_out_ms",
+            "fade_in_ms"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "floor_dbfs": {
+              "type": "number"
+            },
+            "max_attenuation_db": {
+              "type": "number"
+            },
+            "min_pause_ms": {
+              "type": "number"
+            },
+            "hold_ms": {
+              "type": "number"
+            },
+            "pre_open_ms": {
+              "type": "number"
+            },
+            "fade_out_ms": {
+              "type": "number"
+            },
+            "fade_in_ms": {
+              "type": "number"
+            }
+          }
+        },
+        "compressor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "amount",
+            "threshold_above_ref_db",
+            "attack_ms",
+            "release_ms"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "amount": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "threshold_above_ref_db": {
+              "type": "number"
+            },
+            "attack_ms": {
+              "type": "number"
+            },
+            "release_ms": {
               "type": "number"
             }
           }
@@ -846,6 +996,90 @@
           }
         }
       }
+    },
+    "knock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "regions",
+        "duration_s",
+        "reduction_db"
+      ],
+      "properties": {
+        "regions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duration_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "reduction_db": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "description": "Störgeräusche (Griffgeräusche, Knackser): erkannt und in den Tiefen abgesenkt."
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "floor_dbfs",
+        "pause_level_dbfs",
+        "attenuation_db",
+        "gated_fraction"
+      ],
+      "properties": {
+        "floor_dbfs": {
+          "type": "number"
+        },
+        "pause_level_dbfs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "attenuation_db": {
+          "type": "number",
+          "minimum": 0
+        },
+        "gated_fraction": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "description": "Pausen-Absenkung (Noisefloor-Regler)."
+    },
+    "compressor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "threshold_dbfs",
+        "ratio",
+        "max_gain_reduction_db",
+        "active_fraction"
+      ],
+      "properties": {
+        "threshold_dbfs": {
+          "type": "number"
+        },
+        "ratio": {
+          "type": "number",
+          "minimum": 1
+        },
+        "max_gain_reduction_db": {
+          "type": "number",
+          "minimum": 0
+        },
+        "active_fraction": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "description": "Kompressor; Schwelle bezogen auf die Ausgabe."
     }
   }
 }

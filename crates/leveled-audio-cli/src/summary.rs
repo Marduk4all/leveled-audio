@@ -79,25 +79,27 @@ pub fn print_summary(results: &[FileOutcome]) {
         .unwrap_or(5)
         .clamp(5, 40);
     println!(
-        "{:<w$}  {:>6} {:>5} │ {:>6} {:>4} {:>5} │ {:>11} │ {:>6} {:>5} {:>4} │ {:>5} {:>4}  Status",
+        "{:<w$}  {:>6} {:>5} │ {:>6} {:>4} {:>5} {:>3} │ {:>11} │ {:>6} {:>5} {:>4} │ {:>5} {:>4} {:>4}  Status",
         "Datei",
         "LUFS",
         "dBTP",
         "dBFS",
         "Konf",
         "NR",
+        "Kn",
         "Leveler",
         "LUFS",
         "dBTP",
         "LRA",
         "Gain",
+        "Kmp",
         "Lim",
     );
     println!(
-        "{:<w$}  {:─^12} │ {:─^17} │ {:─^11} │ {:─^17} │",
+        "{:<w$}  {:─^12} │ {:─^21} │ {:─^11} │ {:─^17} │",
         "", " Eingang ", " Rauschen ", "", " Ausgang ",
     );
-    let blank = |text: &str| println!("{text:>width$}", width = w + 84);
+    let blank = |text: &str| println!("{text:>width$}", width = w + 93);
     let mut notes = Vec::new();
     for r in results {
         let name = truncate(&r.display, w);
@@ -146,15 +148,39 @@ pub fn print_summary(results: &[FileOutcome]) {
                     .limiter
                     .as_ref()
                     .map_or(String::new(), |l| format!("{:.1}", l.max_gain_reduction_db));
+                let kn = report
+                    .knock
+                    .as_ref()
+                    .map_or(String::new(), |k| k.regions.to_string());
+                let kmp = report
+                    .compressor
+                    .as_ref()
+                    .map_or(String::new(), |c| format!("{:.1}", c.max_gain_reduction_db));
                 println!(
-                    "{name:<w$}  {:>6} {:>5} │ {noise:>6} {conf:>4} {nr:>5} │ {lev:>11} │ {oi:>6} {otp:>5} {olra:>4} │ {gain:>5} {lim:>4}  ok",
+                    "{name:<w$}  {:>6} {:>5} │ {noise:>6} {conf:>4} {nr:>5} {kn:>3} │ {lev:>11} │ {oi:>6} {otp:>5} {olra:>4} │ {gain:>5} {kmp:>4} {lim:>4}  ok",
                     f(i.integrated_lufs),
                     f(i.true_peak_dbtp),
                 );
                 if let Some(reason) = report.denoise.as_ref().and_then(|d| d.skipped.as_ref()) {
                     notes.push(format!("  {}: Rauschreduktion aus – {reason}", r.display));
                 }
-                if let Some(c) = report.loudness_correction_db {
+                if let Some(g) = &report.gate {
+                    notes.push(if g.attenuation_db >= 0.1 {
+                        format!(
+                            "  {}: Pausen um {:.1} dB abgesenkt (Ziel {:.0} dBFS, {:.0} % der Zeit)",
+                            r.display,
+                            g.attenuation_db,
+                            g.floor_dbfs,
+                            g.gated_fraction * 100.0
+                        )
+                    } else {
+                        format!(
+                            "  {}: Pausen liegen schon unter dem Ziel ({:.0} dBFS), keine Absenkung",
+                            r.display, g.floor_dbfs
+                        )
+                    });
+                }
+                if let Some(c) = report.loudness_correction_db.filter(|c| c.abs() >= 0.5) {
                     notes.push(format!(
                         "  {}: Lautheit nach dem Limiter um {c:+.1} dB nachkorrigiert",
                         r.display
@@ -181,8 +207,9 @@ pub fn print_summary(results: &[FileOutcome]) {
     }
     println!(
         "\nRauschen: Profilpegel (dBFS), Konfidenz des Profils (MS = Minimum-Statistics-Ersatz, \
-         imp = importiert), NR = Absenkung in Pausen (dB).\n\
-         Leveler: Gain-Bereich in Sprache (dB). Gain: Normalisierung (dB), Lim: max. Limiter-Absenkung (dB)."
+         imp = importiert), NR = Absenkung in Pausen (dB), Kn = erkannte Knackser/Griffgeräusche.\n\
+         Leveler: Gain-Bereich in Sprache (dB). Gain: Normalisierung (dB), Kmp/Lim: max. Absenkung durch\n\
+         Kompressor/Limiter (dB)."
     );
     if !notes.is_empty() {
         println!("\nHinweise:");
@@ -199,7 +226,7 @@ pub fn print_summary(results: &[FileOutcome]) {
 }
 
 /// Version des JSON-Report-Formats (siehe `docs/report.schema.json`).
-pub const REPORT_SCHEMA_VERSION: u32 = 1;
+pub const REPORT_SCHEMA_VERSION: u32 = 2;
 
 /// Kopfdaten des JSON-Reports.
 pub struct JsonMeta<'a> {
@@ -283,4 +310,99 @@ pub fn print_album(a: &AlbumReport) {
         println!("  Hinweis: {w}");
     }
     println!();
+}
+
+/// Kurzbeschreibungen der Regler für `preset show` (PLAN 4.5).
+const PRESET_COMMENTS: &[(&str, &str)] = &[
+    (
+        "highpass.frequency_hz",
+        "Rumpeln/Trittschall weg; ab ≈ 100 Hz verlieren tiefe Stimmen Wärme",
+    ),
+    (
+        "denoise.reduction_db",
+        "max. Rauschabsenkung; ab ≈ 15–18 dB „blubbernde“ Artefakte",
+    ),
+    (
+        "denoise.gain_rule",
+        "wiener-dd = weniger Musical Noise, subtract = klassisch",
+    ),
+    (
+        "knock.enabled",
+        "Griffgeräusche/Knackser erkennen (werden nicht mitgelevelt)",
+    ),
+    (
+        "knock.max_speech_to_low_db",
+        "Sprachband so weit unter den Tiefen ⇒ Störgeräusch",
+    ),
+    (
+        "knock.reduction_db",
+        "Tiefen in Knacksern absenken; 0 = nur erkennen",
+    ),
+    (
+        "leveler.strength",
+        "0–1: 1 = Sprecher gleich laut, 0 = Unterschiede bleiben",
+    ),
+    ("leveler.max_boost_db", "größte Anhebung leiser Phrasen"),
+    ("leveler.max_cut_db", "größte Absenkung lauter Phrasen"),
+    (
+        "gate.enabled",
+        "Pausen-Absenkung (aus = natürlicher Raumton)",
+    ),
+    ("gate.floor_dbfs", "Pegel der Pausen in der fertigen Datei"),
+    (
+        "gate.max_attenuation_db",
+        "höchstens so viel zusätzliche Absenkung",
+    ),
+    ("gate.hold_ms", "Halten nach dem letzten Laut"),
+    (
+        "gate.fade_out_ms",
+        "Ausblenden in die Pause (länger = sanfter)",
+    ),
+    ("gate.fade_in_ms", "Aufblenden vor dem nächsten Wort"),
+    (
+        "compressor.amount",
+        "0–1: 0,4 ≈ 1,5:1 (natürlich), 0,6 ≈ 2:1 (kräftig)",
+    ),
+    (
+        "compressor.threshold_above_ref_db",
+        "Schwelle über dem Sprachpegel der Datei",
+    ),
+    ("loudness.target_lufs", "Ziel-Lautheit"),
+    (
+        "loudness.mode",
+        "per-file oder album (ein Gain für alle Dateien)",
+    ),
+    ("limiter.ceiling_dbtp", "Obergrenze für Spitzen"),
+    ("output.bit_depth", "same, 16, 24 oder 32f"),
+];
+
+/// Ergänzt die TOML-Ausgabe von `preset show` um Kommentare.
+pub fn annotate_preset(toml: &str) -> String {
+    let mut out = String::from(
+        "# leveled-audio-Preset. Nicht genannte Werte kommen vom Basis-Preset (`base`,\n\
+         # Default podcast-stereo); Werte lassen sich auch einzeln mit --set ändern.\n",
+    );
+    let mut section = String::new();
+    for line in toml.lines() {
+        let t = line.trim();
+        if t.starts_with('[') && t.ends_with(']') {
+            section = t.trim_matches(|c| c == '[' || c == ']').to_string();
+            out.push_str(line);
+        } else if let Some((k, _)) = t.split_once(" = ") {
+            let key = if section.is_empty() {
+                k.to_string()
+            } else {
+                format!("{section}.{k}")
+            };
+            out.push_str(line);
+            if let Some((_, c)) = PRESET_COMMENTS.iter().find(|(name, _)| *name == key) {
+                out.push_str("  # ");
+                out.push_str(c);
+            }
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    out
 }

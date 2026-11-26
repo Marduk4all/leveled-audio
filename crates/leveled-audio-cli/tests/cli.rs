@@ -377,9 +377,10 @@ fn preset_layering_and_set() {
     assert!(shown.status.success());
     let text = String::from_utf8_lossy(&shown.stdout);
     assert!(
-        text.starts_with("schema_version = 1\nname = \"funk\""),
+        text.contains("\nschema_version = 1\nname = \"funk\""),
         "{text}"
     );
+    assert!(text.contains("  # "), "Kommentare: {text}");
     assert!(text.contains("target_lufs = -23.0"));
     let copy = dir.join("kopie.toml");
     std::fs::write(&copy, text.as_bytes()).unwrap();

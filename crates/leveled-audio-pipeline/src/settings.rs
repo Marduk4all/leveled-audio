@@ -7,11 +7,121 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
+    pub highpass: HighpassSettings,
     pub denoise: DenoiseSettings,
+    pub knock: KnockSettings,
     pub leveler: LevelerSettings,
+    pub gate: GateSettings,
+    pub compressor: CompressorSettings,
     pub loudness: LoudnessSettings,
     pub limiter: LimiterSettings,
     pub output: OutputSettings,
+}
+
+/// Hochpass vor allen anderen Stufen (Rumpeln, Trittschall).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct HighpassSettings {
+    pub enabled: bool,
+    pub frequency_hz: f64,
+}
+
+impl Default for HighpassSettings {
+    fn default() -> Self {
+        HighpassSettings {
+            enabled: true,
+            frequency_hz: 70.0,
+        }
+    }
+}
+
+/// Störgeräusche (Griffgeräusche, Knackser): Erkennung und Absenkung der Tiefen.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct KnockSettings {
+    /// Erkennung an/aus. Aus = Verhalten wie vor Phase 5 (Störgeräusche zählen als Sprache).
+    pub enabled: bool,
+    /// Frames, deren Sprachband (300–3400 Hz) um mehr als diesen Wert unter den
+    /// Tiefen (20–300 Hz) liegt, gelten als Störgeräusch.
+    pub max_speech_to_low_db: f64,
+    /// Absenkung der Tiefen (< 300 Hz) in Störgeräuschen; 0 = nur erkennen.
+    pub reduction_db: f64,
+}
+
+impl Default for KnockSettings {
+    fn default() -> Self {
+        KnockSettings {
+            enabled: true,
+            max_speech_to_low_db: -15.0,
+            reduction_db: 15.0,
+        }
+    }
+}
+
+/// Pausen-Absenkung (Noisefloor-Regler).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct GateSettings {
+    pub enabled: bool,
+    /// Zielpegel der Pausen in der fertigen Datei (dBFS).
+    pub floor_dbfs: f64,
+    pub max_attenuation_db: f64,
+    pub min_pause_ms: f64,
+    /// Haltezeit nach dem letzten Laut, bevor die Absenkung beginnt.
+    pub hold_ms: f64,
+    /// So viel früher vor dem nächsten Sprachbeginn ist die Absenkung aufgehoben.
+    pub pre_open_ms: f64,
+    /// Ausblenden in die Pause hinein.
+    pub fade_out_ms: f64,
+    /// Aufblenden vor dem nächsten Sprachbeginn.
+    pub fade_in_ms: f64,
+}
+
+impl Default for GateSettings {
+    fn default() -> Self {
+        GateSettings {
+            enabled: false,
+            floor_dbfs: -60.0,
+            max_attenuation_db: 30.0,
+            min_pause_ms: 400.0,
+            hold_ms: 50.0,
+            pre_open_ms: 50.0,
+            fade_out_ms: 150.0,
+            fade_in_ms: 50.0,
+        }
+    }
+}
+
+/// Kompressor für starke Dynamik (laute Ausreißer vor dem Limiter abfangen).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CompressorSettings {
+    pub enabled: bool,
+    /// 0–1: 0 = 1:1, 0,4 ≈ 1,5:1, 0,5 = 2:1, 1 = 6:1.
+    pub amount: f64,
+    /// Schwelle relativ zum Sprach-Referenzpegel der Datei.
+    pub threshold_above_ref_db: f64,
+    pub attack_ms: f64,
+    pub release_ms: f64,
+}
+
+impl Default for CompressorSettings {
+    fn default() -> Self {
+        CompressorSettings {
+            enabled: true,
+            amount: 0.4,
+            threshold_above_ref_db: 8.0,
+            attack_ms: 5.0,
+            release_ms: 150.0,
+        }
+    }
+}
+
+impl CompressorSettings {
+    /// Wirkt der Kompressor überhaupt? (`amount = 0` ⇒ bitidentisch zum Bypass.)
+    pub fn active(&self) -> bool {
+        self.enabled && self.amount > 0.0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -278,27 +388,58 @@ fn merge(base: &mut toml::Table, patch: toml::Table) {
 }
 
 /// Namen der eingebauten Presets.
-pub const PRESET_NAMES: [&str; 3] = ["podcast-stereo", "podcast-mono", "ebu-r128"];
+pub const PRESET_NAMES: [&str; 4] = [
+    "podcast-stereo",
+    "podcast-mono",
+    "podcast-kraeftig",
+    "ebu-r128",
+];
+
+/// Kurzbeschreibung der eingebauten Presets.
+pub fn preset_description(name: &str) -> &'static str {
+    match name {
+        "podcast-stereo" => "natürlich, −16 LUFS (Default)",
+        "podcast-mono" => "natürlich, −19 LUFS (Mono-Podcast)",
+        "podcast-kraeftig" => "kräftig: Pausen fast still, dichter (nahe Referenz), −16 LUFS",
+        "ebu-r128" => "Rundfunk, −23 LUFS, natürlicher Raumton",
+        _ => "",
+    }
+}
 
 impl Settings {
     /// Eingebaute Presets.
     pub fn preset(name: &str) -> Option<Settings> {
         let target = match name {
-            "podcast-stereo" => -16.0,
+            "podcast-stereo" | "podcast-kraeftig" => -16.0,
             "podcast-mono" => -19.0,
             "ebu-r128" => -23.0,
             _ => return None,
         };
-        Some(Settings {
+        let mut s = Settings {
+            highpass: HighpassSettings::default(),
             denoise: DenoiseSettings::default(),
+            knock: KnockSettings::default(),
             leveler: LevelerSettings::default(),
+            gate: GateSettings::default(),
+            compressor: CompressorSettings::default(),
             loudness: LoudnessSettings {
                 target_lufs: target,
                 ..LoudnessSettings::default()
             },
             limiter: LimiterSettings::default(),
             output: OutputSettings::default(),
-        })
+        };
+        if name == "podcast-kraeftig" {
+            // PLAN 4.5, Spalte „Kräftig“.
+            s.highpass.frequency_hz = 80.0;
+            s.knock.reduction_db = 20.0;
+            s.denoise.reduction_db = 15.0;
+            s.leveler.strength = 0.8;
+            s.compressor.amount = 0.6;
+            s.gate.enabled = true;
+            s.gate.floor_dbfs = -60.0;
+        }
+        Some(s)
     }
 
     /// Preset-Datei (TOML) laden und schichten: eingebautes Basis-Preset
@@ -388,6 +529,47 @@ impl Settings {
 
     /// Prüft Wertebereiche. Gibt eine Fehlermeldung für den Anwender zurück.
     pub fn validate(&self) -> std::result::Result<(), String> {
+        let h = &self.highpass;
+        if !(20.0..=200.0).contains(&h.frequency_hz) {
+            return Err("highpass.frequency_hz muss zwischen 20 und 200 Hz liegen".into());
+        }
+        let k = &self.knock;
+        if !(-30.0..=-5.0).contains(&k.max_speech_to_low_db) {
+            return Err("knock.max_speech_to_low_db muss zwischen −30 und −5 dB liegen".into());
+        }
+        if !(0.0..=40.0).contains(&k.reduction_db) {
+            return Err("knock.reduction_db muss zwischen 0 und 40 dB liegen".into());
+        }
+        let g = &self.gate;
+        if !(-90.0..=-30.0).contains(&g.floor_dbfs) {
+            return Err("gate.floor_dbfs muss zwischen −90 und −30 dBFS liegen".into());
+        }
+        if !(0.0..=60.0).contains(&g.max_attenuation_db) {
+            return Err("gate.max_attenuation_db muss zwischen 0 und 60 dB liegen".into());
+        }
+        if !(100.0..=2000.0).contains(&g.min_pause_ms)
+            || !(0.0..=500.0).contains(&g.hold_ms)
+            || !(0.0..=200.0).contains(&g.pre_open_ms)
+            || !(10.0..=1000.0).contains(&g.fade_out_ms)
+            || !(10.0..=500.0).contains(&g.fade_in_ms)
+        {
+            return Err(
+                "gate: min_pause_ms 100–2000, hold_ms 0–500, pre_open_ms 0–200, fade_out_ms 10–1000, fade_in_ms 10–500"
+                    .into(),
+            );
+        }
+        let c = &self.compressor;
+        if !(0.0..=1.0).contains(&c.amount) {
+            return Err("compressor.amount muss zwischen 0 und 1 liegen (0–100 %)".into());
+        }
+        if !(0.0..=20.0).contains(&c.threshold_above_ref_db) {
+            return Err(
+                "compressor.threshold_above_ref_db muss zwischen 0 und 20 dB liegen".into(),
+            );
+        }
+        if !(0.5..=50.0).contains(&c.attack_ms) || !(20.0..=1000.0).contains(&c.release_ms) {
+            return Err("compressor: attack_ms 0,5–50, release_ms 20–1000".into());
+        }
         let d = &self.denoise;
         if !(0.0..=40.0).contains(&d.reduction_db) {
             return Err("denoise.reduction_db muss zwischen 0 und 40 dB liegen".into());

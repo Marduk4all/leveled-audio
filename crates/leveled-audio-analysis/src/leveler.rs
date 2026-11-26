@@ -193,7 +193,7 @@ pub fn leveler_curve(
     };
     let mut segs = segments(&classes[..n]);
     curve.stats.phrases = segs.len();
-    if segs.is_empty() || p.strength <= 0.0 {
+    if segs.is_empty() {
         return curve;
     }
 
@@ -244,7 +244,8 @@ pub fn leveler_curve(
     segs.retain(|&(a, b)| mean_db(a, b) >= reference - p.gate_below_ref_db);
     curve.stats.gated = before - segs.len();
     curve.stats.phrases = segs.len();
-    if segs.is_empty() {
+    // Ohne Stärke bleibt die Kurve flach; die Referenz dient dann nur dem Kompressor.
+    if segs.is_empty() || p.strength <= 0.0 {
         return curve;
     }
 
@@ -284,16 +285,16 @@ pub fn leveler_curve(
     let is_long = |len: usize| len as f64 * hop_s >= p.long_pause_s;
     // Pausenobergrenze, aber nie unter die Absenkgrenze.
     let pmb = p.pause_max_boost_db.max(-p.max_cut_db);
-    // Vor der ersten Phrase.
+    // Vor der ersten Phrase: Es gibt keinen vorherigen Gain zu halten, also
+    // wie eine lange Pause behandeln (nicht über `pause_max_boost_db` anheben).
+    // Sonst würden Geräusche am Dateianfang mit dem Gain der ersten Phrase
+    // angehoben.
     let (s0, _) = segs[0];
     let gn = g[s0];
-    if is_long(s0) {
-        let q = gn.min(pmb);
-        g[..s0].iter_mut().for_each(|x| *x = q);
-        ramp(&mut g[s0 - long_ramp_f..s0], q, gn);
-    } else {
-        g[..s0].iter_mut().for_each(|x| *x = gn);
-    }
+    let q = gn.min(pmb);
+    let r = long_ramp_f.min(s0);
+    g[..s0 - r].iter_mut().for_each(|x| *x = q);
+    ramp(&mut g[s0 - r..s0], q, gn);
     // Zwischen den Phrasen.
     for w in segs.windows(2) {
         let (e, s) = (w[0].1, w[1].0);
@@ -314,15 +315,13 @@ pub fn leveler_curve(
     }
     // Nach der letzten Phrase.
     let e = segs[segs.len() - 1].1;
+    // Nach der letzten Phrase ebenso (nichts folgt, das „atmen“ könnte).
     if e < n {
         let gp = g[e - 1];
-        if is_long(n - e) {
-            let q = gp.min(pmb);
-            ramp(&mut g[e..e + long_ramp_f], gp, q);
-            g[e + long_ramp_f..].iter_mut().for_each(|x| *x = q);
-        } else {
-            g[e..].iter_mut().for_each(|x| *x = gp);
-        }
+        let q = gp.min(pmb);
+        let r = long_ramp_f.min(n - e);
+        ramp(&mut g[e..e + r], gp, q);
+        g[e + r..].iter_mut().for_each(|x| *x = q);
     }
 
     // Statistik über Sprach-Frames.
@@ -573,14 +572,11 @@ mod tests {
         let at = |t: f64| cv.gain_db[(t / hop_s()) as usize];
         assert_eq!(cv.stats.gated, 1);
         assert_eq!(cv.stats.phrases, 2);
-        // Gain der letzten echten Phrase wird gehalten.
-        assert!(
-            (at(10.8) - at(9.4)).abs() < 0.01,
-            "{} vs {}",
-            at(10.8),
-            at(9.4)
-        );
-        assert!(at(10.8) < 2.0);
+        // Nach der letzten echten Phrase (angehoben um ≈ +1,2 dB) gleitet der
+        // Gain auf höchstens `pause_max_boost_db` (0): Der leise Ausklang wird
+        // nicht mit angehoben (seit Phase 5 auch bei kurzen End-Bereichen).
+        assert!(at(9.4) > 0.5, "{}", at(9.4));
+        assert!(at(10.8) <= 1e-6, "{}", at(10.8));
     }
 
     #[test]
