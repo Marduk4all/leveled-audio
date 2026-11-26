@@ -2,7 +2,8 @@
 
 use leveled_audio_io::SampleFormat;
 use leveled_audio_pipeline::{
-    BitDepth, CancelToken, DitherMode, NoProgress, PipelineError, Settings, process_file,
+    BitDepth, CancelToken, DitherMode, JobOptions, NoProgress, PipelineError, Settings,
+    process_file,
 };
 use leveled_audio_testkit::{
     Planar, amp_to_db, mix, read_wav, reference_true_peak, speechlike, temp_dir, white_noise,
@@ -11,7 +12,16 @@ use leveled_audio_testkit::{
 use std::path::Path;
 
 fn process(input: &Path, output: &Path, settings: &Settings) -> leveled_audio_pipeline::FileReport {
-    process_file(input, output, settings, 0, &NoProgress, &CancelToken::new()).unwrap()
+    process_file(
+        input,
+        output,
+        settings,
+        &JobOptions::default(),
+        0,
+        &NoProgress,
+        &CancelToken::new(),
+    )
+    .unwrap()
 }
 
 fn speech_file(
@@ -104,6 +114,7 @@ fn all_formats_keep_length_and_format() {
 fn passthrough_is_bit_exact() {
     let dir = temp_dir("passthrough");
     let mut s = Settings::default();
+    s.denoise.enabled = false;
     s.loudness.enabled = false;
     s.limiter.enabled = false;
     s.output.dither = DitherMode::Off;
@@ -124,6 +135,7 @@ fn limiter_alone_does_not_touch_quiet_audio() {
     // Limiter an, aber Signal weit unter dem Ceiling: nach Latenzausgleich identisch.
     let dir = temp_dir("limiter-quiet");
     let mut s = Settings::default();
+    s.denoise.enabled = false;
     s.loudness.enabled = false;
     s.output.dither = DitherMode::Off;
     s.output.bit_depth = BitDepth::F32;
@@ -145,6 +157,7 @@ fn cancel_leaves_no_files() {
         &input,
         &output,
         &Settings::default(),
+        &JobOptions::default(),
         0,
         &NoProgress,
         &cancel,

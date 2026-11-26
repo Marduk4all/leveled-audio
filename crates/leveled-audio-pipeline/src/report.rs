@@ -1,4 +1,4 @@
-use leveled_audio_analysis::LoudnessStats;
+use leveled_audio_analysis::{Confidence, LoudnessStats, ProfileSource};
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -26,6 +26,35 @@ pub struct LimiterReport {
     pub limited_fraction: f64,
 }
 
+/// Rauschreduktion: Profil und Wirkung.
+#[derive(Debug, Clone, Serialize)]
+pub struct DenoiseReport {
+    /// Grund, falls die Rauschreduktion nicht angewendet wurde.
+    pub skipped: Option<String>,
+    pub profile_source: Option<ProfileSource>,
+    /// Konfidenz des automatisch gesuchten Profils (0–1).
+    pub confidence: Option<f64>,
+    pub confidence_detail: Option<Confidence>,
+    /// Menge des Pausenmaterials, aus dem das Profil stammt.
+    pub profile_duration_s: f64,
+    pub pauses_used: usize,
+    /// Rauschpegel laut Profil (RMS, unbewertet).
+    pub noise_level_dbfs: Option<f64>,
+    /// Anteil der als Sprache erkannten Frames.
+    pub speech_fraction: f64,
+    pub fft_size: usize,
+    pub gain_rule: String,
+    pub reduction_db: f64,
+    /// Gemessener Pegel in Pausen vor/nach der Rauschreduktion (dBFS).
+    pub pause_level_in_dbfs: Option<f64>,
+    pub pause_level_out_dbfs: Option<f64>,
+    /// Mittlere Absenkung in Pausen bzw. in Sprache (dB, negativ).
+    pub attenuation_pauses_db: Option<f64>,
+    pub attenuation_speech_db: Option<f64>,
+    pub delta_path: Option<PathBuf>,
+    pub profile_saved: Option<PathBuf>,
+}
+
 /// Bericht für eine Datei. Felder, die ein Durchgang nicht ermittelt, sind `None`.
 #[derive(Debug, Clone, Serialize)]
 pub struct FileReport {
@@ -36,6 +65,7 @@ pub struct FileReport {
     pub input_clip_runs: u64,
     /// Gleichspannungsanteil je Kanal in dBFS (nur gemeldet, wenn > −50 dBFS).
     pub dc_offset_dbfs: Vec<Option<f64>>,
+    pub denoise: Option<DenoiseReport>,
     pub normalization_gain_db: Option<f64>,
     pub limiter: Option<LimiterReport>,
     pub output: Option<OutputInfo>,

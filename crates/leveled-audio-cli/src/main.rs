@@ -6,11 +6,12 @@ mod summary;
 mod ui;
 
 use anyhow::{Context, Result, bail};
-use args::{Cli, Command, PresetCmd, ProcessArgs};
+use args::{Cli, Command, PresetCmd, ProcessArgs, ProfileCmd};
 use clap::Parser;
 use inputs::{Job, collect_inputs, plan_outputs};
 use leveled_audio_pipeline::{
-    CancelToken, PRESET_NAMES, ProgressSink, Settings, analyze_file, process_file, run_batch,
+    CancelToken, JobOptions, NoProgress, PRESET_NAMES, ProgressSink, Settings, analyze_file,
+    learn_profile, load_profile, process_file, run_batch, save_profile,
 };
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -61,18 +62,49 @@ fn run(cli: Cli) -> Result<u8> {
     match cli.command {
         Command::Process(a) => cmd_process(a, cli.quiet),
         Command::Analyze(a) => {
+            let settings = load_settings(&a.preset)?;
             let files = collect_inputs(&a.inputs, a.recursive)?;
             let cancel = install_ctrlc();
             let jobs = a.jobs.unwrap_or_else(default_jobs);
             let names: Vec<String> = files.iter().map(|f| f.display.clone()).collect();
             let ui = ui::Progress::new(&names, cli.quiet);
             let results = run_batch(files, jobs, |id, f| {
-                let r = analyze_file(&f.path, id, &ui as &dyn ProgressSink, &cancel);
+                let r = analyze_file(&f.path, &settings, id, &ui as &dyn ProgressSink, &cancel);
                 ui.file_done(id);
                 FileOutcome::from_result(f.display, f.path, r)
             });
             ui.finish();
             finish(&results, &cancel, a.json.as_deref(), None, cli.quiet)
+        }
+        Command::Profile {
+            cmd:
+                ProfileCmd::Learn {
+                    input,
+                    output,
+                    preset,
+                },
+        } => {
+            let settings = load_settings(&preset)?;
+            let cancel = install_ctrlc();
+            let (profile, report) = learn_profile(&input, &settings, &NoProgress, &cancel)?;
+            save_profile(&output, &profile)?;
+            if !cli.quiet {
+                let d = report.denoise.as_ref();
+                println!(
+                    "Rauschprofil gespeichert: {}\n  Quelle: {:?}, Pegel {:.1} dBFS, Konfidenz {}, {:.1} s aus {} Pause(n)",
+                    output.display(),
+                    profile.source,
+                    profile.level_dbfs(),
+                    d.and_then(|d| d.confidence)
+                        .map_or("–".into(), |c| format!("{c:.2}")),
+                    profile.duration_s,
+                    profile.pauses_used,
+                );
+                for w in &report.warnings {
+                    println!("  Hinweis: {w}");
+                }
+            }
+            Ok(0)
         }
         Command::Preset { cmd } => {
             match cmd {
@@ -131,7 +163,35 @@ fn cmd_process(a: ProcessArgs, quiet: bool) -> Result<u8> {
     if a.no_normalize {
         settings.loudness.enabled = false;
     }
+    if a.no_denoise {
+        settings.denoise.enabled = false;
+    }
+    if let Some(r) = a.reduction_db {
+        settings.denoise.reduction_db = r;
+    }
+    if let Some(g) = a.gain_rule {
+        settings.denoise.gain_rule = g.into();
+    }
     settings.validate().map_err(anyhow::Error::msg)?;
+
+    let noise_profile = match &a.noise_profile {
+        Some(p) => {
+            if !settings.denoise.enabled {
+                bail!("--noise-profile und --no-denoise schließen sich aus");
+            }
+            Some(std::sync::Arc::new(load_profile(p)?))
+        }
+        None => None,
+    };
+    if let Some(dir) = &a.save_profiles {
+        std::fs::create_dir_all(dir)
+            .with_context(|| format!("Ordner {} anlegen", dir.display()))?;
+    }
+    let opts = JobOptions {
+        noise_profile,
+        save_profile_dir: a.save_profiles.clone(),
+        export_delta: a.export_delta,
+    };
 
     let files = collect_inputs(&a.inputs, a.recursive)?;
     let preset_label = std::path::Path::new(&a.preset)
@@ -159,6 +219,7 @@ fn cmd_process(a: ProcessArgs, quiet: bool) -> Result<u8> {
                     &input.path,
                     &output,
                     &settings,
+                    &opts,
                     id,
                     &ui as &dyn ProgressSink,
                     &cancel,

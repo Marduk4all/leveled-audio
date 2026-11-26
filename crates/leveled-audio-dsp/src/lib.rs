@@ -5,13 +5,17 @@
 //! Alle Bausteine sind deterministisch (keine Zufallsquellen außer seeded PRNG,
 //! feste Summationsreihenfolge).
 
+pub mod denoise;
 pub mod dither;
 pub mod limiter;
 pub mod oversampler;
+pub mod stft;
 
+pub use denoise::{DenoiseParams, GainRule, SpectralDenoiser};
 pub use dither::TpdfDither;
 pub use limiter::{LimiterParams, LimiterStats, TruePeakLimiter};
 pub use oversampler::PeakOversampler;
+pub use stft::{Complex32, DelayLine, StftEngine, StftFrame, auto_fft_size};
 
 /// Dezibel → linearer Faktor.
 #[inline]

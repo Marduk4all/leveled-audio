@@ -77,12 +77,16 @@ pub fn print_summary(results: &[FileOutcome]) {
         .map(|r| r.display.chars().count())
         .max()
         .unwrap_or(5)
-        .clamp(5, 48);
+        .clamp(5, 40);
     println!(
-        "{:<w$}  {:>7} {:>6} {:>5}   {:>7} {:>6} {:>5}  {:>6}  {:>5}  Status",
-        "Datei", "LUFS", "dBTP", "LRA", "LUFS", "dBTP", "LRA", "Gain", "Lim.",
+        "{:<w$}  {:>6} {:>5} │ {:>6} {:>4} {:>5} │ {:>6} {:>5} {:>4} │ {:>5} {:>4}  Status",
+        "Datei", "LUFS", "dBTP", "dBFS", "Konf", "NR", "LUFS", "dBTP", "LRA", "Gain", "Lim",
     );
-    println!("{:<w$}  {:─^20}   {:─^20}", "", " Eingang ", " Ausgang ",);
+    println!(
+        "{:<w$}  {:─^12} │ {:─^17} │ {:─^17} │",
+        "", " Eingang ", " Rauschen ", " Ausgang ",
+    );
+    let blank = |text: &str| println!("{text:>width$}", width = w + 70);
     let mut notes = Vec::new();
     for r in results {
         let name = truncate(&r.display, w);
@@ -94,6 +98,29 @@ pub fn print_summary(results: &[FileOutcome]) {
                     .map_or(("".into(), "".into(), "".into()), |o| {
                         (f(o.integrated_lufs), f(o.true_peak_dbtp), f(o.lra_lu))
                     });
+                let (noise, conf, nr) =
+                    report
+                        .denoise
+                        .as_ref()
+                        .map_or(("".into(), "".into(), "".into()), |d| {
+                            let src = match d.profile_source {
+                                Some(leveled_audio_pipeline::ProfileSource::Minstat) => "MS",
+                                Some(leveled_audio_pipeline::ProfileSource::Imported) => "imp",
+                                _ => "",
+                            };
+                            let conf = if src.is_empty() {
+                                d.confidence.map_or("–".into(), |c| format!("{c:.2}"))
+                            } else {
+                                src.to_string()
+                            };
+                            let nr = if d.skipped.is_some() {
+                                "aus".into()
+                            } else {
+                                d.attenuation_pauses_db
+                                    .map_or(String::new(), |a| format!("{a:.1}"))
+                            };
+                            (f(d.noise_level_dbfs), conf, nr)
+                        });
                 let gain = report
                     .normalization_gain_db
                     .map_or(String::new(), |g| format!("{g:+.1}"));
@@ -102,23 +129,36 @@ pub fn print_summary(results: &[FileOutcome]) {
                     .as_ref()
                     .map_or(String::new(), |l| format!("{:.1}", l.max_gain_reduction_db));
                 println!(
-                    "{name:<w$}  {:>7} {:>6} {:>5}   {oi:>7} {otp:>6} {olra:>5}  {gain:>6}  {lim:>5}  ok",
+                    "{name:<w$}  {:>6} {:>5} │ {noise:>6} {conf:>4} {nr:>5} │ {oi:>6} {otp:>5} {olra:>4} │ {gain:>5} {lim:>4}  ok",
                     f(i.integrated_lufs),
                     f(i.true_peak_dbtp),
-                    f(i.lra_lu),
                 );
+                if let Some(reason) = report.denoise.as_ref().and_then(|d| d.skipped.as_ref()) {
+                    notes.push(format!("  {}: Rauschreduktion aus – {reason}", r.display));
+                }
                 for warn in &report.warnings {
                     notes.push(format!("  {}: {warn}", r.display));
                 }
             }
-            Status::Skipped { .. } => println!("{name:<w$}  {:>74}", "übersprungen (existiert)"),
-            Status::Cancelled => println!("{name:<w$}  {:>74}", "abgebrochen"),
+            Status::Skipped { .. } => {
+                print!("{name:<w$}");
+                blank("übersprungen (existiert)");
+            }
+            Status::Cancelled => {
+                print!("{name:<w$}");
+                blank("abgebrochen");
+            }
             Status::Error { message } => {
-                println!("{name:<w$}  {:>74}", "FEHLER");
+                print!("{name:<w$}");
+                blank("FEHLER");
                 notes.push(format!("  {}: {message}", r.display));
             }
         }
     }
+    println!(
+        "\nRauschen: Profilpegel (dBFS), Konfidenz des Profils (MS = Minimum-Statistics-Ersatz, \
+         imp = importiert), NR = Absenkung in Pausen (dB)."
+    );
     if !notes.is_empty() {
         println!("\nHinweise:");
         for n in notes {

@@ -1,9 +1,10 @@
 //! Verarbeitungskette und Batch-Orchestrierung.
 //!
 //! Ablauf pro Datei (Mehrpass-Streaming, konstanter Speicher):
-//! - **Analyse**: Eingabe lesen und messen (Lautheit, Clipping, DC).
-//!   Ab Phase 2 kommen hier Features, VAD und Rauschprofil hinzu.
-//! - **Render**: Eingabe → Gain → True-Peak-Limiter → Dither → Datei,
+//! - **Analyse**: Lautheit, Clipping, DC, STFT-Features, VAD, Minimum Statistics;
+//!   danach Rauschprofil (automatisch, Fallback oder importiert).
+//! - **Messen**: Lautheit nach der Rauschreduktion.
+//! - **Rendern**: Rauschreduktion → Gain → True-Peak-Limiter → Dither → Datei,
 //!   dabei die Ausgabe messen.
 //!
 //! Die Pipeline kennt keine Fortschrittsbalken oder Signale; sie meldet über
@@ -11,18 +12,22 @@
 //! GUI dieselbe API nutzen.
 
 mod batch;
+mod denoise_stage;
 mod job;
+mod noise;
 mod progress;
 mod report;
 mod settings;
 
 pub use batch::run_batch;
-pub use job::{analyze_file, process_file, resolve_output_spec};
-pub use leveled_audio_analysis::LoudnessStats;
+pub use job::{JobOptions, analyze_file, learn_profile, process_file, resolve_output_spec};
+pub use leveled_audio_analysis::{LoudnessStats, NoiseProfile, ProfileSource};
+pub use noise::{load_profile, save_profile};
 pub use progress::{CancelToken, NoProgress, Pass, ProgressSink};
-pub use report::{FileReport, InputInfo, LimiterReport, OutputInfo};
+pub use report::{DenoiseReport, FileReport, InputInfo, LimiterReport, OutputInfo};
 pub use settings::{
-    BitDepth, DitherMode, LimiterSettings, LoudnessSettings, OutputSettings, PRESET_NAMES, Settings,
+    BitDepth, DenoiseSettings, DitherMode, FftSize, GainRuleSetting, LimiterSettings,
+    LoudnessSettings, OutputSettings, PRESET_NAMES, ProfileSettings, Settings, StatisticSetting,
 };
 
 use std::path::PathBuf;

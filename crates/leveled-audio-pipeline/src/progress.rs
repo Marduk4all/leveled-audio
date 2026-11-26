@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pass {
     Analyze,
+    Measure,
     Render,
 }
 
@@ -12,6 +13,7 @@ impl Pass {
     pub fn label(self) -> &'static str {
         match self {
             Pass::Analyze => "Analyse",
+            Pass::Measure => "Messen",
             Pass::Render => "Rendern",
         }
     }

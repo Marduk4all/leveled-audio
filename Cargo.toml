@@ -17,6 +17,7 @@ leveled-audio-pipeline = { path = "crates/leveled-audio-pipeline" }
 leveled-audio-testkit = { path = "crates/leveled-audio-testkit" }
 
 ebur128 = "0.1.11"
+realfft = "3.5"
 rayon = "1.12"
 clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }

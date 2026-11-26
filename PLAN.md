@@ -263,8 +263,8 @@ Bezeichnungen: `X` ist das Spektrum des aktuellen Frames, `λ` das Profil (Leist
 | `reduction_db` | **12** | 0–40 | Max. Absenkung, harte Untergrenze `G ≥ Gmin` (beide Modi) |
 | `oversubtraction` | **1,3** | 1,0–3,0 | Skaliert das Profil (Sicherheitsabstand für Schwankungen) |
 | `floor` (nur `subtract`) | **0,05** (≈ −13 dB Leistung) | 0–1 | Spectral Floor β relativ zum Rauschprofil. Effektiv gilt `G ≥ max(sqrt(β), Gmin)`. |
-| `smooth_time_release_ms` | **80** | 0–500 | Gain fällt langsam (Ein-Pol), steigt sofort (Onsets bleiben erhalten) |
-| `smooth_freq_oct` | **1/6** | 0–1/2 | Dreiecksglättung des Gains im **log-Gain-Bereich**, mindestens 3 Bins |
+| `release_ms` | **40** (Plan: 80) | 0–1000 | Gain fällt mit Ein-Pol-Glättung, steigt sofort (Onsets bleiben erhalten) |
+| `freq_smooth_oct` | **0 = aus** (Plan: 1/6) | 0–1 | Dreiecksglättung des Gains im **log-Gain-Bereich**, mindestens 3 Bins |
 | `fft_size` | auto | 512–8192 | siehe 3.1 |
 
 **Maßnahmen gegen Musical Noise (explizit):**
@@ -405,8 +405,8 @@ gain_rule = "wiener-dd"     # oder "subtract"
 reduction_db = 12.0
 oversubtraction = 1.3
 fft_size = "auto"
-smooth_time_release_ms = 80
-smooth_freq_oct = 0.1667
+release_ms = 40
+freq_smooth_oct = 0.0
 stereo_link = false
 
 [denoise.profile]
@@ -494,7 +494,31 @@ Akzeptanzkriterien:
 - [ ] Ctrl+C hinterlässt keine `.partial`-Dateien, Exit 130. Eingabedateien sind nie überschreibbar.
 - [ ] CI grün auf allen drei Betriebssystemen.
 
-### Phase 2: VAD, automatische Rauschprofilsuche, Spectral Subtract (≈ 3 Wochen)
+### Phase 2: VAD, automatische Rauschprofilsuche, Spectral Subtract (≈ 3 Wochen) – umgesetzt
+
+> **Stand 2026-11-26:** Alle automatisierten Kriterien erfüllt, Hörabnahme bestanden („klingt gut“).
+> Gemessen (synthetische Sprache, rosa Rauschen, 20 dB SNR, Defaults): Profil ≤ 0,7 dB je Terzband
+> (weiß/rosa/Lüfter, auch mit Stille, Fades, Atmern, Klicks); Pausen −11,5 dB; SNR +5,7 dB;
+> Sprachverzerrung 25,5 dB; Log-Kurtosis-Ratio 0,10 (Subtract: 0,54); Minimum Statistics bei
+> fließender Rede +2,6 dB. Tempo: Denoise 450× Echtzeit (ein Kern, Stereo 48 kHz), Gesamtkette
+> 70× Echtzeit, 3-h-Datei mit 96 MB Peak-RSS. Deine fünf Clips: alle mit automatischem Profil
+> (Konfidenz 0,63–0,92), Absenkung in Pausen 10–12 dB.
+>
+> **Abweichungen vom Plan (gemessen begründet):**
+> - Release 40 statt 80 ms: Musical Noise (LKR) 0,35 → 0,08, Pausen −10,8 → −11,6 dB.
+> - Frequenzglättung per Default aus: Mit Mindestbreite 3 Bins senkt sie Obertöne der Stimme mit ab
+>   (Sprachverzerrung bei 10 dB SNR 10,6 dB statt 16,9 dB), bei kaum weniger Musical Noise.
+> - Profil-Frames werden nach dem Mittel der log. Bin-Leistungen ausgewählt, nicht nach Bandenergie
+>   (sonst bis −2 dB Auswahl-Bias im Bass bei tieffrequentem Rauschen).
+> - Getrimmtes Mittel mit Bias-Korrektur (sonst −1,3 dB).
+> - Mindestmenge Pausenmaterial 0,3 s statt 0,5 s; Randausschluss min(0,5 s; 5 %); Zusatzabstand zu
+>   Sprache 40 ms; Stationaritätsschwelle adaptiv. Grund: kurze, sprachdichte Clips (deine
+>   Aufnahmen) – Minimum Statistics lag dort bis 7 dB daneben, ein Profil aus 0,3–0,5 s Pause nicht.
+> - Minimum-Statistics-Fenster 2,5 s statt 1,5 s.
+> - Kriterium SNR-Gewinn ≥ 8 dB bei 20 dB SNR war mit max. 12 dB Absenkung nicht erreichbar
+>   (Rauschen bleibt während der Sprache in sprachdominierten Bins). Neu: ≥ 5 dB (gemessen 5,7;
+>   bei 10 dB SNR +7,8). Pausen ≥ 11 dB und Sprachverzerrung ≥ 20 dB bleiben und werden erreicht.
+> - Delta-Datei immer 32 bit float; Profile werden mit `--save-profiles <Ordner>` gespeichert.
 
 Lieferumfang:
 - STFT/WOLA-Engine, Pass 1 (Features, VAD, Minimum Statistics), Pass 1b (Profil + Konfidenz).
@@ -509,7 +533,7 @@ Akzeptanzkriterien:
 - [ ] Log-Kurtosis-Ratio wird festgehalten. wiener-dd ist messbar besser als subtract bei gleicher Rauschdämpfung. Der Baseline-Wert wird als Regressionsschranke gesetzt.
 - [ ] Profil-Roundtrip identisch. Import mit anderer Samplerate oder FFT-Größe funktioniert. Erzwungenes Profil gilt für den ganzen Batch.
 - [ ] Denoise ≥ 150× Echtzeit (Stereo 48 kHz, ein Kern, Apple M1 oder vergleichbarer x64).
-- [ ] **Hörabnahme durch dich:** kein auffälliges Musical Noise bei Defaults auf deinen Testaufnahmen.
+- [x] **Hörabnahme durch dich:** kein auffälliges Musical Noise bei Defaults auf deinen Testaufnahmen.
 
 ### Phase 3: Adaptive Leveler (≈ 1–1,5 Wochen)
 

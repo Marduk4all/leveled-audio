@@ -3,7 +3,10 @@
 //! Alle Generatoren sind deterministisch (fester PRNG-Seed) und liefern planare
 //! Kanalpuffer (`Vec<Vec<f32>>`).
 
+mod speech;
+
 use leveled_audio_io::{AudioSpec, SampleFormat, create_sink};
+pub use speech::{SpeechSignal, power_kurtosis, synth_speech};
 use std::f64::consts::PI;
 use std::path::Path;
 
@@ -282,5 +285,33 @@ mod tests {
         let s = sine_phase(48_000, 1, 12_000.0, 0.0, 0.05, PI / 4.0);
         assert!((sample_peak_db(&s) + 3.01).abs() < 0.05);
         assert!(amp_to_db(reference_true_peak(&s)).abs() < 0.1);
+    }
+}
+
+#[cfg(test)]
+mod speech_tests {
+    use super::*;
+
+    #[test]
+    fn synth_speech_level_and_activity() {
+        let s = synth_speech(48_000, 20.0, 120.0, -20.0, 5);
+        assert_eq!(s.samples.len(), 960_000);
+        let a = s.activity();
+        assert!((0.4..0.85).contains(&a), "Aktivität {a}");
+        let (mut sum, mut cnt) = (0f64, 0usize);
+        for &(b, e) in &s.active {
+            for v in &s.samples[b..e] {
+                sum += (*v as f64).powi(2);
+            }
+            cnt += e - b;
+        }
+        let db = amp_to_db((sum / cnt as f64).sqrt());
+        assert!((db + 20.0).abs() < 0.01);
+        // Pausen sind wirklich still.
+        let silent = (0..s.samples.len())
+            .filter(|&i| !s.is_active(i))
+            .step_by(997)
+            .all(|i| s.samples[i] == 0.0);
+        assert!(silent);
     }
 }
