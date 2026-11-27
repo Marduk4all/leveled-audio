@@ -10,7 +10,6 @@ license = "MIT OR Apache-2.0"
 publish = false
 authors = ["The Leveled Audio authors"]
 repository = "https://github.com/Marduk4all/leveled-audio"
-homepage = "https://github.com/Marduk4all/leveled-audio"
 keywords = ["audio", "podcast", "loudness", "normalization", "noise-reduction"]
 categories = ["multimedia::audio", "command-line-utilities"]
 

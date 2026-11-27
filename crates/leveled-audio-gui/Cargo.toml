@@ -7,7 +7,6 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 repository.workspace = true
-homepage.workspace = true
 keywords.workspace = true
 categories = ["multimedia::audio", "gui"]
 authors.workspace = true
