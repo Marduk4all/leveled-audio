@@ -3,4 +3,5 @@
 //! `job` enthält die Logik ohne Oberfläche (testbar), `app` die egui-Ansicht.
 
 pub mod app;
+pub mod i18n;
 pub mod job;

@@ -2,12 +2,13 @@
 //! und Ergebnis (PLAN Phase 6). Exportiert wird neben die Originaldateien
 //! (`<Name>-leveled-<Preset>.wav`); vorhandene Ziele nur nach Rückfrage.
 
+use crate::i18n::Lang;
 use crate::job::{self, Existing, Outcome, Request};
 use eframe::egui;
 use leveled_audio_cli::summary::{FileOutcome, JsonMeta, Status, annotate_preset, write_json};
 use leveled_audio_pipeline::{
     CancelToken, PARAM_GROUPS, PARAMS, PRESET_NAMES, ParamKind, ParamSpec, Pass, ProgressSink,
-    Settings, lookup, preset_description, settings_table,
+    Settings, lookup, settings_table,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -144,6 +145,8 @@ struct Finished {
 }
 
 pub struct App {
+    /// Sprache der Oberfläche (Start: Englisch).
+    pub lang: Lang,
     inputs: Vec<PathBuf>,
     recursive: bool,
     wav_count: Result<usize, String>,
@@ -171,6 +174,7 @@ impl App {
         cc.egui_ctx.set_visuals(theme::visuals());
         let settings = Settings::default();
         App {
+            lang: Lang::default(),
             inputs: Vec::new(),
             recursive: true,
             wav_count: Ok(0),
@@ -294,32 +298,44 @@ impl App {
     // ---------------------------------------------------------------- UI
 
     fn ui_input(&mut self, ui: &mut egui::Ui) {
+        let l = self.lang;
         ui.horizontal_wrapped(|ui| {
-            if ui.button("Dateien hinzufügen…").clicked()
+            if ui
+                .button(l.t("Dateien hinzufügen…", "Add files…"))
+                .clicked()
                 && let Some(files) = rfd::FileDialog::new()
                     .add_filter("WAV", &["wav", "WAV"])
                     .pick_files()
             {
                 self.add_inputs(files);
             }
-            if ui.button("Ordner hinzufügen…").clicked()
+            if ui
+                .button(l.t("Ordner hinzufügen…", "Add folder…"))
+                .clicked()
                 && let Some(dir) = rfd::FileDialog::new().pick_folder()
             {
                 self.add_inputs([dir]);
             }
             if ui
-                .checkbox(&mut self.recursive, "Unterordner einbeziehen")
+                .checkbox(
+                    &mut self.recursive,
+                    l.t("Unterordner einbeziehen", "Include subfolders"),
+                )
                 .changed()
             {
                 self.recount();
             }
-            if !self.inputs.is_empty() && ui.button("Alle entfernen").clicked() {
+            if !self.inputs.is_empty() && ui.button(l.t("Alle entfernen", "Remove all")).clicked() {
                 self.inputs.clear();
                 self.recount();
             }
         });
         ui.label(
-            egui::RichText::new("Dateien oder Ordner lassen sich auch ins Fenster ziehen.").weak(),
+            egui::RichText::new(l.t(
+                "Dateien oder Ordner lassen sich auch ins Fenster ziehen.",
+                "You can also drag files or folders into the window.",
+            ))
+            .weak(),
         );
         let mut remove = None;
         egui::ScrollArea::vertical()
@@ -328,7 +344,11 @@ impl App {
             .show(ui, |ui| {
                 for (i, p) in self.inputs.iter().enumerate() {
                     ui.horizontal(|ui| {
-                        if ui.small_button("✕").on_hover_text("Entfernen").clicked() {
+                        if ui
+                            .small_button("✕")
+                            .on_hover_text(l.t("Entfernen", "Remove"))
+                            .clicked()
+                        {
                             remove = Some(i);
                         }
                         let kind = if p.is_dir() { "📁" } else { "🎵" };
@@ -341,9 +361,9 @@ impl App {
             self.recount();
         }
         match &self.wav_count {
-            Ok(0) => ui.label(egui::RichText::new("0 WAV-Dateien").weak()),
+            Ok(0) => ui.label(egui::RichText::new(l.t("0 WAV-Dateien", "0 WAV files")).weak()),
             Ok(n) => ui.label(
-                egui::RichText::new(format!("{n} WAV-Datei(en)"))
+                egui::RichText::new(format!("{n} {}", l.t("WAV-Datei(en)", "WAV file(s)")))
                     .strong()
                     .color(theme::TEAL),
             ),
@@ -356,16 +376,24 @@ impl App {
         let Some(list) = &self.confirm else {
             return;
         };
+        let l = self.lang;
         let mut choice = None;
         egui::Modal::new(egui::Id::unique("overwrite")).show(ctx, |ui| {
             ui.set_max_width(520.0);
             ui.label(
-                egui::RichText::new("Dateien überschreiben?")
+                egui::RichText::new(l.t("Dateien überschreiben?", "Overwrite files?"))
                     .heading()
                     .strong()
                     .color(theme::ACCENT),
             );
-            ui.label(format!("{} Zieldatei(en) gibt es schon:", list.len()));
+            ui.label(format!(
+                "{} {}",
+                list.len(),
+                l.t(
+                    "Zieldatei(en) gibt es schon:",
+                    "output file(s) already exist:"
+                )
+            ));
             for p in list.iter().take(8) {
                 ui.monospace(
                     p.file_name()
@@ -373,14 +401,15 @@ impl App {
                 );
             }
             if list.len() > 8 {
-                ui.label(format!("… und {} weitere", list.len() - 8));
+                ui.label(format!("… {} {}", l.t("und", "and"), list.len() - 8));
             }
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 if ui
                     .add(
                         egui::Button::new(
-                            egui::RichText::new("Überschreiben").color(egui::Color32::WHITE),
+                            egui::RichText::new(l.t("Überschreiben", "Overwrite"))
+                                .color(egui::Color32::WHITE),
                         )
                         .fill(theme::ACCENT),
                     )
@@ -388,10 +417,13 @@ impl App {
                 {
                     choice = Some(Some(Existing::Overwrite));
                 }
-                if ui.button("Vorhandene überspringen").clicked() {
+                if ui
+                    .button(l.t("Vorhandene überspringen", "Skip existing"))
+                    .clicked()
+                {
                     choice = Some(Some(Existing::Skip));
                 }
-                if ui.button("Abbrechen").clicked() {
+                if ui.button(l.t("Abbrechen", "Cancel")).clicked() {
                     choice = Some(None);
                 }
             });
@@ -404,6 +436,7 @@ impl App {
     }
 
     fn ui_presets(&mut self, ui: &mut egui::Ui) {
+        let l = self.lang;
         ui.horizontal_wrapped(|ui| {
             ui.label("Preset");
             let mut chosen = None;
@@ -414,7 +447,7 @@ impl App {
                     for name in PRESET_NAMES {
                         if ui
                             .selectable_label(self.preset_label == name, name)
-                            .on_hover_text(preset_description(name))
+                            .on_hover_text(l.preset(name))
                             .clicked()
                         {
                             chosen = Some(name);
@@ -426,14 +459,14 @@ impl App {
                 self.base = self.settings.clone();
                 self.preset_label = name.to_string();
             }
-            if ui.button("Laden…").clicked()
+            if ui.button(l.t("Laden…", "Load…")).clicked()
                 && let Some(path) = rfd::FileDialog::new()
                     .add_filter("Preset", &["toml"])
                     .pick_file()
             {
                 self.load_preset(&path);
             }
-            if ui.button("Speichern…").clicked()
+            if ui.button(l.t("Speichern…", "Save…")).clicked()
                 && let Some(path) = rfd::FileDialog::new()
                     .add_filter("Preset", &["toml"])
                     .set_file_name(format!("{}.toml", self.preset_label))
@@ -444,19 +477,29 @@ impl App {
                 });
                 let text = annotate_preset(&self.settings.to_preset_toml(&label));
                 self.message = Some(match std::fs::write(&path, text) {
-                    Ok(()) => (false, format!("Preset gespeichert: {}", path.display())),
+                    Ok(()) => (
+                        false,
+                        format!(
+                            "{}: {}",
+                            l.t("Preset gespeichert", "Preset saved"),
+                            path.display()
+                        ),
+                    ),
                     Err(e) => (true, format!("{}: {e}", path.display())),
                 });
             }
             if ui
-                .button("Zurücksetzen")
-                .on_hover_text("Alle Werte auf das gewählte bzw. geladene Preset zurücksetzen")
+                .button(l.t("Zurücksetzen", "Reset"))
+                .on_hover_text(l.t(
+                    "Alle Werte auf das gewählte bzw. geladene Preset zurücksetzen",
+                    "Reset all values to the selected or loaded preset",
+                ))
                 .clicked()
             {
                 self.settings = self.base.clone();
             }
         });
-        ui.label(egui::RichText::new(preset_description(&self.preset_label)).weak());
+        ui.label(egui::RichText::new(l.preset(&self.preset_label)).weak());
     }
 
     fn load_preset(&mut self, path: &Path) {
@@ -471,18 +514,27 @@ impl App {
                 self.preset_label = path
                     .file_stem()
                     .map_or("preset".into(), |s| s.to_string_lossy().into_owned());
-                self.message = Some((false, format!("Preset geladen: {}", path.display())));
+                self.message = Some((
+                    false,
+                    format!(
+                        "{}: {}",
+                        self.lang.t("Preset geladen", "Preset loaded"),
+                        path.display()
+                    ),
+                ));
             }
             Err(e) => self.message = Some((true, format!("{}: {e}", path.display()))),
         }
     }
 
     fn ui_settings(&mut self, ui: &mut egui::Ui) {
+        let l = self.lang;
         let table = settings_table(&self.settings);
         let mut changes: Vec<(&'static str, toml::Value)> = Vec::new();
         for group in PARAM_GROUPS {
             let params: Vec<&ParamSpec> = PARAMS.iter().filter(|p| p.group == group).collect();
-            egui::CollapsingHeader::new(group)
+            egui::CollapsingHeader::new(l.group(group))
+                .id_salt(group)
                 .default_open(false)
                 .show(ui, |ui| {
                     let grid =
@@ -493,8 +545,9 @@ impl App {
                                 .show(ui, |ui| {
                                     for p in params.iter().filter(|p| p.primary == primary) {
                                         if let Some(v) = lookup(&table, p.key) {
-                                            ui.label(p.label).on_hover_text(p.help);
-                                            if let Some(nv) = param_widget(ui, p, v) {
+                                            let (label, help) = l.param(p);
+                                            ui.label(label).on_hover_text(help);
+                                            if let Some(nv) = param_widget(ui, l, p, v) {
                                                 changes.push((p.key, nv));
                                             }
                                             ui.end_row();
@@ -504,7 +557,7 @@ impl App {
                         };
                     grid(ui, &format!("{group}-p"), true, &mut changes);
                     if params.iter().any(|p| !p.primary) {
-                        egui::CollapsingHeader::new("Feineinstellungen")
+                        egui::CollapsingHeader::new(l.t("Feineinstellungen", "Fine tuning"))
                             .id_salt(format!("{group}-fein"))
                             .show(ui, |ui| {
                                 grid(ui, &format!("{group}-f"), false, &mut changes)
@@ -518,25 +571,40 @@ impl App {
             }
         }
         if let Err(e) = self.settings.validate() {
-            ui.colored_label(theme::ERROR, format!("Ungültige Einstellung: {e}"));
+            ui.colored_label(
+                theme::ERROR,
+                format!("{}: {e}", l.t("Ungültige Einstellung", "Invalid setting")),
+            );
         }
     }
 
     fn ui_run(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let l = self.lang;
         if let Some(r) = &self.running {
             let st = r.progress.state.lock().expect("Mutex");
             let total = r.names.len();
             ui.horizontal(|ui| {
                 ui.add(egui::Spinner::new().color(theme::ACCENT));
                 let (text, color) = if r.cancel.is_cancelled() {
-                    ("Status: wird abgebrochen …".to_string(), theme::GOLD)
+                    (
+                        l.t("Status: wird abgebrochen …", "Status: cancelling …")
+                            .to_string(),
+                        theme::GOLD,
+                    )
                 } else {
                     (
-                        format!(
-                            "Status: in Arbeit – {} von {total} Dateien fertig ({:.0} s)",
-                            st.done,
-                            r.started.elapsed().as_secs_f64()
-                        ),
+                        match l {
+                            Lang::De => format!(
+                                "Status: in Arbeit – {} von {total} Dateien fertig ({:.0} s)",
+                                st.done,
+                                r.started.elapsed().as_secs_f64()
+                            ),
+                            Lang::En => format!(
+                                "Status: working – {} of {total} files done ({:.0} s)",
+                                st.done,
+                                r.started.elapsed().as_secs_f64()
+                            ),
+                        },
                         theme::ACCENT,
                     )
                 };
@@ -545,13 +613,18 @@ impl App {
             ui.horizontal(|ui| {
                 ui.add(
                     egui::ProgressBar::new(st.done as f32 / total.max(1) as f32)
-                        .text(format!("{} von {total} Dateien", st.done))
+                        .text(format!(
+                            "{} {} {total} {}",
+                            st.done,
+                            l.t("von", "of"),
+                            l.t("Dateien", "files")
+                        ))
                         .fill(theme::ACCENT)
                         .desired_width(320.0),
                 );
                 if r.cancel.is_cancelled() {
-                    ui.label("wird abgebrochen …");
-                } else if ui.button("Abbrechen").clicked() {
+                    ui.label(l.t("wird abgebrochen …", "cancelling …"));
+                } else if ui.button(l.t("Abbrechen", "Cancel")).clicked() {
                     r.cancel.cancel();
                 }
             });
@@ -563,7 +636,7 @@ impl App {
                 };
                 ui.add(
                     egui::ProgressBar::new(frac.min(1.0))
-                        .text(format!("{pass}: {}", r.names[*id]))
+                        .text(format!("{}: {}", l.pass(pass), r.names[*id]))
                         .fill(theme::TEAL)
                         .desired_width(ui.available_width().min(600.0)),
                 );
@@ -572,7 +645,9 @@ impl App {
             let ok = self.settings.validate().is_ok() && matches!(self.wav_count, Ok(n) if n > 0);
             ui.horizontal_wrapped(|ui| {
                 let enabled = ok && self.confirm.is_none();
-                let label = egui::RichText::new("▶ Exportieren").strong().size(15.0);
+                let label = egui::RichText::new(l.t("▶ Exportieren", "▶ Export"))
+                    .strong()
+                    .size(15.0);
                 let button = if enabled {
                     egui::Button::new(label.color(egui::Color32::WHITE)).fill(theme::ACCENT)
                 } else {
@@ -586,7 +661,11 @@ impl App {
                             .corner_radius(egui::CornerRadius::same(8)),
                     )
                     .on_hover_text(format!(
-                        "Schreibt neben jede Originaldatei: Name{}{}.wav",
+                        "{}: Name{}{}.wav",
+                        l.t(
+                            "Schreibt neben jede Originaldatei",
+                            "Writes next to each original file"
+                        ),
                         job::SUFFIX,
                         self.preset_label
                     ))
@@ -594,22 +673,41 @@ impl App {
                 {
                     self.start(ctx);
                 }
-                ui.label("Parallele Dateien");
+                ui.label(l.t("Parallele Dateien", "Parallel files"));
                 ui.add(egui::Slider::new(&mut self.jobs, 1..=16));
                 let weak = ui.visuals().weak_text_color();
                 let (text, color) = match &self.finished {
                     _ if !ok => (
-                        "Status: bereit, sobald WAV-Dateien hinzugefügt sind".to_string(),
+                        l.t(
+                            "Status: bereit, sobald WAV-Dateien hinzugefügt sind",
+                            "Status: ready once WAV files are added",
+                        )
+                        .to_string(),
                         weak,
                     ),
-                    None => ("Status: bereit".to_string(), theme::TEAL),
-                    Some(f) if f.cancelled => ("Status: abgebrochen".to_string(), theme::GOLD),
+                    None => (
+                        l.t("Status: bereit", "Status: ready").to_string(),
+                        theme::TEAL,
+                    ),
+                    Some(f) if f.cancelled => (
+                        l.t("Status: abgebrochen", "Status: cancelled").to_string(),
+                        theme::GOLD,
+                    ),
                     Some(f) => {
                         let err = f.outcome.files.iter().filter(|o| o.is_error()).count();
                         if err > 0 {
-                            (format!("Status: fertig, {err} Fehler"), theme::ERROR)
+                            (
+                                match l {
+                                    Lang::De => format!("Status: fertig, {err} Fehler"),
+                                    Lang::En => format!("Status: done, {err} error(s)"),
+                                },
+                                theme::ERROR,
+                            )
                         } else {
-                            ("Status: fertig ✔".to_string(), theme::OK)
+                            (
+                                l.t("Status: fertig ✔", "Status: done ✔").to_string(),
+                                theme::OK,
+                            )
                         }
                     }
                 };
@@ -633,24 +731,34 @@ impl App {
             .filter(|o| matches!(o.status, Status::Ok { .. }))
             .count();
         let err = f.outcome.files.iter().filter(|o| o.is_error()).count();
+        let l = self.lang;
         ui.label(format!(
-            "{}{ok} ok, {err} Fehler, {} gesamt – {:.1} s",
-            if f.cancelled { "Abgebrochen. " } else { "" },
+            "{}{ok} ok, {err} {}, {} {} – {:.1} s",
+            if f.cancelled {
+                l.t("Abgebrochen. ", "Cancelled. ")
+            } else {
+                ""
+            },
+            l.t("Fehler", "error(s)"),
             f.outcome.files.len(),
+            l.t("gesamt", "total"),
             f.seconds
         ));
         if let Some(a) = &f.outcome.album {
             ui.label(format!(
-                "Album: gemeinsamer Gain {} dB, Ausgabe {} LUFS",
+                "Album: {} {} dB, {} {} LUFS",
+                l.t("gemeinsamer Gain", "shared gain"),
                 a.gain_db.map_or("–".into(), |g| format!("{g:+.1}")),
+                l.t("Ausgabe", "output"),
                 a.loudness_out_lufs
                     .map_or("–".into(), |l| format!("{l:.1}"))
             ));
         }
-        result_table(ui, &f.outcome.files);
-        let notes = notes(&f.outcome);
+        result_table(ui, l, &f.outcome.files);
+        let notes = notes(l, &f.outcome);
         if !notes.is_empty() {
-            egui::CollapsingHeader::new(format!("Hinweise ({})", notes.len()))
+            egui::CollapsingHeader::new(format!("{} ({})", l.t("Hinweise", "Notes"), notes.len()))
+                .id_salt("notes")
                 .default_open(err > 0)
                 .show(ui, |ui| {
                     for n in notes {
@@ -660,7 +768,9 @@ impl App {
         }
         let mut msg = None;
         ui.horizontal(|ui| {
-            if ui.button("JSON-Report speichern…").clicked()
+            if ui
+                .button(l.t("JSON-Report speichern…", "Save JSON report…"))
+                .clicked()
                 && let Some(path) = rfd::FileDialog::new()
                     .add_filter("JSON", &["json"])
                     .set_file_name("report.json")
@@ -672,12 +782,19 @@ impl App {
                     album: f.outcome.album.as_ref(),
                 };
                 msg = Some(match write_json(&path, &f.outcome.files, meta) {
-                    Ok(()) => (false, format!("Report gespeichert: {}", path.display())),
+                    Ok(()) => (
+                        false,
+                        format!(
+                            "{}: {}",
+                            l.t("Report gespeichert", "Report saved"),
+                            path.display()
+                        ),
+                    ),
                     Err(e) => (true, format!("{e:#}")),
                 });
             }
             if let Some(dir) = &f.folder
-                && ui.button("Ordner öffnen").clicked()
+                && ui.button(l.t("Ordner öffnen", "Open folder")).clicked()
             {
                 open_folder(dir);
             }
@@ -689,12 +806,13 @@ impl App {
 }
 
 /// Bedienelement für einen Parameter; liefert den neuen Wert bei Änderung.
-fn param_widget(ui: &mut egui::Ui, p: &ParamSpec, v: &toml::Value) -> Option<toml::Value> {
+fn param_widget(ui: &mut egui::Ui, l: Lang, p: &ParamSpec, v: &toml::Value) -> Option<toml::Value> {
+    let help = l.param(p).1;
     match p.kind {
         ParamKind::Bool => {
             let mut b = v.as_bool().unwrap_or(false);
             ui.checkbox(&mut b, "")
-                .on_hover_text(p.help)
+                .on_hover_text(help)
                 .changed()
                 .then_some(b.into())
         }
@@ -718,7 +836,7 @@ fn param_widget(ui: &mut egui::Ui, p: &ParamSpec, v: &toml::Value) -> Option<tom
                         .fixed_decimals(decimals)
                         .clamping(egui::SliderClamping::Always),
                 )
-                .on_hover_text(p.help);
+                .on_hover_text(help);
             r.changed().then(|| {
                 let f = 10f64.powi(decimals as i32);
                 ((shown * f).round() / f / scale).into()
@@ -730,18 +848,18 @@ fn param_widget(ui: &mut egui::Ui, p: &ParamSpec, v: &toml::Value) -> Option<tom
             let text = options
                 .iter()
                 .find(|(k, _)| *k == cur)
-                .map_or(cur.clone(), |(_, l)| l.to_string());
+                .map_or(cur.clone(), |(_, label)| l.choice(label).to_string());
             egui::ComboBox::from_id_salt(p.key)
                 .selected_text(text)
                 .show_ui(ui, |ui| {
-                    for (k, l) in options {
-                        if ui.selectable_label(cur == *k, *l).clicked() && cur != *k {
+                    for (k, label) in options {
+                        if ui.selectable_label(cur == *k, l.choice(label)).clicked() && cur != *k {
                             out = Some((*k).into());
                         }
                     }
                 })
                 .response
-                .on_hover_text(p.help);
+                .on_hover_text(help);
             out
         }
         ParamKind::IntChoice(options) => {
@@ -757,7 +875,7 @@ fn param_widget(ui: &mut egui::Ui, p: &ParamSpec, v: &toml::Value) -> Option<tom
                     }
                 })
                 .response
-                .on_hover_text(p.help);
+                .on_hover_text(help);
             out
         }
         ParamKind::FftSize => {
@@ -777,7 +895,7 @@ fn param_widget(ui: &mut egui::Ui, p: &ParamSpec, v: &toml::Value) -> Option<tom
                     }
                 })
                 .response
-                .on_hover_text(p.help);
+                .on_hover_text(help);
             out
         }
     }
@@ -787,7 +905,7 @@ fn fmt(v: Option<f64>) -> String {
     v.map_or("–".into(), |v| format!("{v:.1}"))
 }
 
-fn result_table(ui: &mut egui::Ui, files: &[FileOutcome]) {
+fn result_table(ui: &mut egui::Ui, l: Lang, files: &[FileOutcome]) {
     egui::ScrollArea::horizontal()
         .id_salt("result")
         .show(ui, |ui| {
@@ -796,18 +914,44 @@ fn result_table(ui: &mut egui::Ui, files: &[FileOutcome]) {
                 .num_columns(11)
                 .spacing([14.0, 4.0])
                 .show(ui, |ui| {
-                    for h in [
-                        "Datei", "Status", "Ein LUFS", "Ein dBTP", "Kn", "Leveler", "Aus LUFS",
-                        "Aus dBTP", "Gain", "Kmp", "Lim",
-                    ] {
-                        ui.strong(h).on_hover_text(match h {
-                            "Kn" => "erkannte Knackser/Griffgeräusche",
-                            "Leveler" => "Gain-Bereich des Levelers in Sprache (dB)",
-                            "Gain" => "Normalisierungs-Gain (dB)",
-                            "Kmp" => "größte Absenkung durch den Kompressor (dB)",
-                            "Lim" => "größte Absenkung durch den Limiter (dB)",
-                            _ => "",
-                        });
+                    let heads: [(&str, &str, &str); 11] = [
+                        (l.t("Datei", "File"), "", ""),
+                        ("Status", "", ""),
+                        (l.t("Ein LUFS", "In LUFS"), "", ""),
+                        (l.t("Ein dBTP", "In dBTP"), "", ""),
+                        (
+                            l.t("Kn", "Kn"),
+                            "erkannte Knackser/Griffgeräusche",
+                            "detected knocks/handling noise",
+                        ),
+                        (
+                            "Leveler",
+                            "Gain-Bereich des Levelers in Sprache (dB)",
+                            "leveler gain range in speech (dB)",
+                        ),
+                        (l.t("Aus LUFS", "Out LUFS"), "", ""),
+                        (l.t("Aus dBTP", "Out dBTP"), "", ""),
+                        (
+                            "Gain",
+                            "Normalisierungs-Gain (dB)",
+                            "normalization gain (dB)",
+                        ),
+                        (
+                            l.t("Kmp", "Cmp"),
+                            "größte Absenkung durch den Kompressor (dB)",
+                            "largest compressor gain reduction (dB)",
+                        ),
+                        (
+                            "Lim",
+                            "größte Absenkung durch den Limiter (dB)",
+                            "largest limiter gain reduction (dB)",
+                        ),
+                    ];
+                    for (h, de, en) in heads {
+                        let r = ui.strong(h);
+                        if !de.is_empty() {
+                            r.on_hover_text(if l == Lang::De { de } else { en });
+                        }
                     }
                     ui.end_row();
                     for o in files {
@@ -843,13 +987,13 @@ fn result_table(ui: &mut egui::Ui, files: &[FileOutcome]) {
                                 ui.label(fmt(r.limiter.as_ref().map(|l| l.max_gain_reduction_db)));
                             }
                             Status::Skipped { .. } => {
-                                ui.label("übersprungen");
+                                ui.label(l.t("übersprungen", "skipped"));
                             }
                             Status::Cancelled => {
-                                ui.label("abgebrochen");
+                                ui.label(l.t("abgebrochen", "cancelled"));
                             }
                             Status::Error { .. } => {
-                                ui.colored_label(theme::ERROR, "FEHLER");
+                                ui.colored_label(theme::ERROR, l.t("FEHLER", "ERROR"));
                             }
                         }
                         ui.end_row();
@@ -858,7 +1002,7 @@ fn result_table(ui: &mut egui::Ui, files: &[FileOutcome]) {
         });
 }
 
-fn notes(o: &Outcome) -> Vec<String> {
+fn notes(l: Lang, o: &Outcome) -> Vec<String> {
     let mut n = Vec::new();
     if let Some(a) = &o.album {
         n.extend(a.warnings.iter().map(|w| format!("Album: {w}")));
@@ -873,10 +1017,16 @@ fn notes(o: &Outcome) -> Vec<String> {
                         .map(|w| format!("{}: {w}", f.display)),
                 );
                 if let Some(g) = &report.gate {
-                    n.push(format!(
-                        "{}: Pausen um {:.1} dB abgesenkt (Ziel {:.0} dBFS)",
-                        f.display, g.attenuation_db, g.floor_dbfs
-                    ));
+                    n.push(match l {
+                        Lang::De => format!(
+                            "{}: Pausen um {:.1} dB abgesenkt (Ziel {:.0} dBFS)",
+                            f.display, g.attenuation_db, g.floor_dbfs
+                        ),
+                        Lang::En => format!(
+                            "{}: pauses lowered by {:.1} dB (target {:.0} dBFS)",
+                            f.display, g.attenuation_db, g.floor_dbfs
+                        ),
+                    });
                 }
             }
             Status::Error { message } => n.push(format!("{}: {message}", f.display)),
@@ -924,21 +1074,46 @@ impl eframe::App for App {
                 self.ui_run(ui, &ctx);
                 ui.add_space(6.0);
             });
+        egui::Panel::top("top").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(APP_NAME)
+                        .heading()
+                        .strong()
+                        .color(theme::ACCENT),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    for (lang, label, tip) in
+                        [(Lang::De, "DE", "Deutsch"), (Lang::En, "EN", "English")]
+                    {
+                        if ui
+                            .selectable_label(self.lang == lang, label)
+                            .on_hover_text(tip)
+                            .clicked()
+                        {
+                            self.lang = lang;
+                        }
+                    }
+                    ui.label(egui::RichText::new("🌐").color(theme::ACCENT));
+                });
+            });
+        });
         self.ui_confirm(&ctx);
+        let l = self.lang;
         egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.add_enabled_ui(!busy, |ui| {
-                    section(ui, "1", "Eingabe");
+                    section(ui, "1", l.t("Eingabe", "Input"));
                     self.ui_input(ui);
                     ui.separator();
-                    section(ui, "2", "Einstellungen");
+                    section(ui, "2", l.t("Einstellungen", "Settings"));
                     self.ui_presets(ui);
                     ui.add_space(4.0);
                     self.ui_settings(ui);
                 });
                 if self.finished.is_some() {
                     ui.separator();
-                    section(ui, "3", "Ergebnis");
+                    section(ui, "3", l.t("Ergebnis", "Result"));
                     self.ui_result(ui);
                 }
             });
@@ -996,6 +1171,7 @@ mod tests {
         );
         let ctx = egui::Context::default();
         let mut app = App::new(&eframe::CreationContext::_new_kittest(ctx.clone()));
+        app.lang = Lang::De;
         app.add_inputs([wav.clone()]);
         frame(&ctx, &mut app, vec![]);
         let t = frame(&ctx, &mut app, vec![]);
@@ -1059,5 +1235,31 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(20));
             frame(&ctx, &mut app, vec![]);
         }
+    }
+
+    #[test]
+    fn starts_in_english_and_switches_to_german() {
+        let ctx = egui::Context::default();
+        let mut app = App::new(&eframe::CreationContext::_new_kittest(ctx.clone()));
+        assert_eq!(app.lang, Lang::En);
+        frame(&ctx, &mut app, vec![]);
+        let t = frame(&ctx, &mut app, vec![]);
+        let has = |t: &[(String, egui::Pos2)], s: &str| t.iter().any(|(x, _)| x == s);
+        assert!(has(&t, "Input") && has(&t, "▶ Export"), "{t:?}");
+        assert!(!has(&t, "Eingabe"));
+        let (_, pos) = t.iter().find(|(s, _)| s == "DE").expect("DE").clone();
+        let p = pos + egui::vec2(3.0, 3.0);
+        let press = |pressed| egui::Event::PointerButton {
+            pos: p,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        frame(&ctx, &mut app, vec![egui::Event::PointerMoved(p)]);
+        frame(&ctx, &mut app, vec![press(true)]);
+        frame(&ctx, &mut app, vec![press(false)]);
+        assert_eq!(app.lang, Lang::De);
+        let t = frame(&ctx, &mut app, vec![]);
+        assert!(has(&t, "Eingabe") && has(&t, "▶ Exportieren"), "{t:?}");
     }
 }

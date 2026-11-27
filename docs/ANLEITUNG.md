@@ -149,6 +149,8 @@ leveled-audio process interview.wav -o fertig/ --naming "{stem}_{lufs}"
 
 Eine schlichte Oberfläche zum Testen: Dateien importieren, alle Einstellungen vornehmen, Ergebnisse exportieren. Sie nutzt dieselbe Verarbeitung wie die Kommandozeile. Bei gleichen Einstellungen entstehen dieselben Dateien.
 
+**Sprache:** Die Oberfläche startet auf Englisch. Oben rechts schaltet `EN` / `DE` jederzeit zwischen Englisch und Deutsch um. Warnungen und Fehlermeldungen aus der Verarbeitung erscheinen derzeit immer auf Deutsch.
+
 Das Fenster ist von oben nach unten aufgebaut:
 
 1. **Eingabe:** „Dateien hinzufügen…“ und „Ordner hinzufügen…“, oder Dateien und Ordner ins Fenster ziehen. „Unterordner einbeziehen“ entspricht `-r`. Darunter steht, wie viele WAV-Dateien gefunden wurden. Bereits exportierte Dateien (`-leveled-` im Namen) werden beim Ordner-Import übergangen; einzeln hinzugefügt werden sie verarbeitet.
