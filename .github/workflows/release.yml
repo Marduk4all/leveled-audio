@@ -111,9 +111,9 @@ jobs:
             f="target/${{ matrix.target }}/release/$b$x"
             [ -f "$f" ] && cp "$f" "dist/$name/"
           done
-          cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
+          cp README.md README.de.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
           [ -f "dist/$name/leveled-audio-gui$x" ] && cp -r licenses "dist/$name/"
-          cp docs/ANLEITUNG.md docs/report.schema.json "dist/$name/"
+          cp docs/ANLEITUNG.md docs/GUIDE.md docs/report.schema.json "dist/$name/"
           # macOS: GUI zusätzlich als Programm-Bundle (Start ohne Terminal).
           if [[ "${{ matrix.target }}" == *apple* ]]; then
             scripts/macos-app.sh "dist/$name/leveled-audio-gui" "dist/$name"
@@ -160,7 +160,7 @@ jobs:
             lipo -info "dist/$name/$b"
           done
           "dist/$name/leveled-audio" --version
-          cp README.md LICENSE-MIT LICENSE-APACHE docs/ANLEITUNG.md docs/report.schema.json "dist/$name/"
+          cp README.md README.de.md LICENSE-MIT LICENSE-APACHE docs/ANLEITUNG.md docs/GUIDE.md docs/report.schema.json "dist/$name/"
           cp -r licenses "dist/$name/"
           scripts/macos-app.sh "dist/$name/leveled-audio-gui" "dist/$name"
           cd dist && tar czf "$name.tar.gz" "$name" && rm -r "$name"
@@ -177,6 +177,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -191,5 +192,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Versionshinweise aus docs/releases/<tag>.md, sonst automatisch.
+          notes=(--generate-notes)
+          [ -f "docs/releases/$GITHUB_REF_NAME.md" ] && notes=(--notes-file "docs/releases/$GITHUB_REF_NAME.md")
           gh release create "$GITHUB_REF_NAME" dist/leveled-audio-* dist/SHA256SUMS.txt \
-            --repo "$GITHUB_REPOSITORY" --title "leveled-audio $GITHUB_REF_NAME" --generate-notes
+            --repo "$GITHUB_REPOSITORY" --title "Leveled Audio $GITHUB_REF_NAME" "${notes[@]}"
