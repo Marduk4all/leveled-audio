@@ -115,3 +115,7 @@ footer { margin-top: 64px; padding: 28px 0 40px; border-top: 1px solid var(--bor
   .hero-grid, .shots { grid-template-columns: 1fr; }
   .hero nav .links a { margin-left: 12px; }
 }
+
+table.files { margin: 8px 0 24px; }
+table.files td > code { white-space: nowrap; }
+.old { color: var(--muted); font-size: 14px; }

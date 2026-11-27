@@ -1,12 +1,16 @@
 name: Release
 
-# Baut die Release-Binaries für macOS (Apple Silicon, Intel, Universal),
-# Windows und Linux, prüft, dass sie ohne Zusatzinstallation laufen, und
-# hängt sie mit SHA256-Summen an ein GitHub-Release.
+# Baut die Release-Binaries für macOS, Windows und Linux, prüft, dass sie
+# ohne Zusatzinstallation laufen, und hängt sie mit SHA256-Summen an ein
+# GitHub-Release. Dateinamen sind für Laien lesbar (`asset` in der Matrix):
 #
-# Kommandozeile `leveled-audio`: alle Plattformen, Linux statisch (musl).
-# GUI `leveled-audio-gui`: macOS, Windows und Linux (glibc, braucht die
-# Grafikbibliotheken eines üblichen Desktops).
+#   leveled-audio-<ver>-macos.tar.gz             Universal (Apple Silicon + Intel), mit App
+#   leveled-audio-<ver>-windows-x64.zip          Kommandozeile + GUI
+#   leveled-audio-<ver>-linux-x64.tar.gz         Kommandozeile + GUI (glibc, Desktop)
+#   leveled-audio-<ver>-linux-x64-cli-only.tar.gz  nur Kommandozeile, statisch (musl)
+#
+# Die einzelnen macOS-Architekturen werden nur für das Universal-Binary gebaut
+# und nicht veröffentlicht.
 #
 # Auslöser: ein Tag `v*` (z. B. `git tag v0.1.0 && git push origin v0.1.0`)
 # oder manuell (dann nur Artefakte, kein Release).
@@ -29,18 +33,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Nur Zwischenprodukte für das Universal-Binary (asset leer).
           - target: aarch64-apple-darwin
             os: macos-latest
+            asset: ""
           - target: x86_64-apple-darwin
             os: macos-latest
+            asset: ""
           # C-Laufzeit statisch gelinkt (siehe .cargo/config.toml): kein VC-Redist nötig.
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+            asset: windows-x64
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
-          # Nur die GUI (die Kommandozeile kommt statisch aus dem musl-Build).
+            asset: linux-x64-cli-only
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+            asset: linux-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -63,7 +72,6 @@ jobs:
         run: |
           case "${{ matrix.target }}" in
             *musl) pkgs="-p leveled-audio-cli" ;;
-            *linux-gnu) pkgs="-p leveled-audio-gui" ;;
             *) pkgs="-p leveled-audio-cli -p leveled-audio-gui" ;;
           esac
           cargo build --release --locked --target ${{ matrix.target }} $pkgs
@@ -100,11 +108,12 @@ jobs:
           if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then "$bin" --version; fi
 
       - name: Paket
+        if: matrix.asset != ''
         shell: bash
         run: |
           ver=${GITHUB_REF_NAME#v}
           [ "$GITHUB_REF_TYPE" = "tag" ] || ver=dev
-          name=leveled-audio-$ver-${{ matrix.target }}
+          name=leveled-audio-$ver-${{ matrix.asset }}
           mkdir -p "dist/$name"
           x=""; [[ "${{ matrix.target }}" == *windows* ]] && x=.exe
           for b in leveled-audio leveled-audio-gui; do
@@ -114,10 +123,6 @@ jobs:
           cp README.md README.de.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
           [ -f "dist/$name/leveled-audio-gui$x" ] && cp -r licenses "dist/$name/"
           cp docs/ANLEITUNG.md docs/GUIDE.md docs/report.schema.json "dist/$name/"
-          # macOS: GUI zusätzlich als Programm-Bundle (Start ohne Terminal).
-          if [[ "${{ matrix.target }}" == *apple* ]]; then
-            scripts/macos-app.sh "dist/$name/leveled-audio-gui" "dist/$name"
-          fi
           cd dist
           if [[ "${{ matrix.target }}" == *windows* ]]; then
             7z a "$name.zip" "$name" > /dev/null
@@ -126,8 +131,9 @@ jobs:
           fi
           rm -r "$name"
       - uses: actions/upload-artifact@v4
+        if: matrix.asset != ''
         with:
-          name: ${{ matrix.target }}
+          name: ${{ matrix.asset }}
           path: dist/*
       # Für das Universal-Binary das nackte Binary weitergeben.
       - uses: actions/upload-artifact@v4
@@ -151,7 +157,7 @@ jobs:
         run: |
           ver=${GITHUB_REF_NAME#v}
           [ "$GITHUB_REF_TYPE" = "tag" ] || ver=dev
-          name=leveled-audio-$ver-universal-apple-darwin
+          name=leveled-audio-$ver-macos
           mkdir -p "dist/$name"
           for b in leveled-audio leveled-audio-gui; do
             lipo -create -output "dist/$name/$b" \
@@ -166,7 +172,7 @@ jobs:
           cd dist && tar czf "$name.tar.gz" "$name" && rm -r "$name"
       - uses: actions/upload-artifact@v4
         with:
-          name: universal-apple-darwin
+          name: macos
           path: dist/*
 
   release:

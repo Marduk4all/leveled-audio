@@ -26,14 +26,16 @@ Eingabedateien werden nie verändert.
 
 Lade das Archiv für dein System von der Release-Seite und entpacke es:
 
-| System | Archiv |
+| Dein Computer | Archiv |
 |---|---|
-| macOS (Apple Silicon und Intel) | `leveled-audio-<version>-universal-apple-darwin.tar.gz` |
-| macOS nur Apple Silicon / nur Intel | `…-aarch64-apple-darwin` / `…-x86_64-apple-darwin` |
-| Windows 10/11 (64 bit) | `leveled-audio-<version>-x86_64-pc-windows-msvc.zip` |
-| Linux (64 bit, jede Distribution) | `leveled-audio-<version>-x86_64-unknown-linux-musl.tar.gz` |
+| Mac (jedes Modell, Apple Silicon oder Intel) | `leveled-audio-<version>-macos.tar.gz` |
+| Windows 10/11 (64 bit) | `leveled-audio-<version>-windows-x64.zip` |
+| Linux-Desktop (Ubuntu, Fedora, Debian …) | `leveled-audio-<version>-linux-x64.tar.gz` |
+| Linux-Server / Docker, nur Kommandozeile | `leveled-audio-<version>-linux-x64-cli-only.tar.gz` |
 
-Die Binaries haben keine Laufzeitabhängigkeiten: Windows braucht kein VC++-Redistributable, das Linux-Binary ist statisch gelinkt. Die Prüfsummen stehen in `SHA256SUMS.txt`:
+Version 0.1.0 verwendet noch technische Namen: `…-universal-apple-darwin` (Mac), `…-x86_64-pc-windows-msvc` (Windows), `…-x86_64-unknown-linux-gnu` (Linux-Desktop, nur Oberfläche) und `…-x86_64-unknown-linux-musl` (Linux-Kommandozeile). Ignoriere dort `…-aarch64-apple-darwin` und `…-x86_64-apple-darwin`; die Universal-Datei passt auf jeden Mac.
+
+Die Programme brauchen keine Zusatzinstallation: Windows braucht kein VC++-Redistributable, und das Linux-Archiv „cli-only“ ist statisch gelinkt und läuft auf jeder Distribution. Die Prüfsummen stehen in `SHA256SUMS.txt`:
 
 ```bash
 shasum -a 256 -c SHA256SUMS.txt --ignore-missing      # macOS
@@ -48,7 +50,7 @@ xattr -d com.apple.quarantine ./leveled-audio
 
 Lege `leveled-audio` (bzw. `leveled-audio.exe`) in einen Ordner im `PATH`, z. B. `/usr/local/bin` oder `~/bin`.
 
-**Grafische Oberfläche:** Neben der Kommandozeile liegt `leveled-audio-gui` (Windows: `leveled-audio-gui.exe`) im Archiv. Unter Linux gibt es sie als eigenes Archiv `…-x86_64-unknown-linux-gnu`. Sie braucht die Grafik- und GTK-Bibliotheken eines üblichen Desktops (X11 oder Wayland, GTK 3), die jede Desktop-Distribution mitbringt. Siehe Abschnitt 3a.
+**Grafische Oberfläche:** Neben der Kommandozeile liegt `leveled-audio-gui` (Windows: `leveled-audio-gui.exe`) im Archiv. Unter Linux liegt sie in `…-linux-x64` und braucht die Grafik- und GTK-Bibliotheken eines üblichen Desktops (X11 oder Wayland, GTK 3), die jede Desktop-Distribution mitbringt. Siehe Abschnitt 3a.
 
 ---
 

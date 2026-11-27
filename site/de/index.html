@@ -187,6 +187,16 @@
       <li>WAV-Dateien oder Ordner hinzufügen oder ins Fenster ziehen.</li>
       <li>Preset wählen und auf <strong>Exportieren</strong> klicken. Die Ergebnisse landen neben den Originalen als <code>Name-leveled-&lt;Preset&gt;.wav</code>.</li>
     </ol>
+    <table class="files">
+      <caption>Welche Datei brauche ich? Nimm die, deren Name so endet:</caption>
+      <thead><tr><th scope="col">Dein Computer</th><th scope="col">Dateiname endet auf</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Mac (jedes Modell)</th><td><code>-macos.tar.gz</code> <span class="old">(v0.1.0: <code>-universal-apple-darwin.tar.gz</code>)</span></td></tr>
+        <tr><th scope="row">Windows 10/11</th><td><code>-windows-x64.zip</code> <span class="old">(v0.1.0: <code>-x86_64-pc-windows-msvc.zip</code>)</span></td></tr>
+        <tr><th scope="row">Linux-Desktop</th><td><code>-linux-x64.tar.gz</code> <span class="old">(v0.1.0: <code>-x86_64-unknown-linux-gnu.tar.gz</code>)</span></td></tr>
+        <tr><th scope="row">Linux-Server / Docker, nur Kommandozeile</th><td><code>-linux-x64-cli-only.tar.gz</code> <span class="old">(v0.1.0: <code>-x86_64-unknown-linux-musl.tar.gz</code>)</span></td></tr>
+      </tbody>
+    </table>
     <p>Lieber Kommandozeile? Dieselbe Verarbeitung gibt es als <code>leveled-audio</code>:</p>
     <pre><code>leveled-audio process aufnahmen/ -r -o fertig/                 # Podcast, −16 LUFS
 leveled-audio process dialog.wav -o fertig/ --target-lufs -14   # YouTube-Video

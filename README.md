@@ -94,6 +94,15 @@ Platform recommendations change over time, so check your platform's current deli
 
 ## Quick start
 
+### Which file do I need?
+
+| Your computer | File name ends in |
+|---|---|
+| Mac (any model) | `-macos.tar.gz` (v0.1.0: `-universal-apple-darwin.tar.gz`) |
+| Windows 10/11 | `-windows-x64.zip` (v0.1.0: `-x86_64-pc-windows-msvc.zip`) |
+| Linux desktop | `-linux-x64.tar.gz` (v0.1.0: `-x86_64-unknown-linux-gnu.tar.gz`) |
+| Linux server / Docker, command line only | `-linux-x64-cli-only.tar.gz` (v0.1.0: `-x86_64-unknown-linux-musl.tar.gz`) |
+
 ### Desktop app
 
 1. **Download** the archive for your system from the [latest release](https://github.com/Marduk4all/leveled-audio/releases/latest) and unpack it.

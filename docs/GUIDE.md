@@ -28,14 +28,16 @@ Input files are never modified.
 
 Download the archive for your system from the releases page and unpack it:
 
-| System | Archive |
+| Your computer | Archive |
 |---|---|
-| macOS (Apple Silicon and Intel) | `leveled-audio-<version>-universal-apple-darwin.tar.gz` |
-| macOS Apple Silicon only / Intel only | `…-aarch64-apple-darwin` / `…-x86_64-apple-darwin` |
-| Windows 10/11 (64 bit) | `leveled-audio-<version>-x86_64-pc-windows-msvc.zip` |
-| Linux (64 bit, any distribution) | `leveled-audio-<version>-x86_64-unknown-linux-musl.tar.gz` |
+| Mac (any model, Apple Silicon or Intel) | `leveled-audio-<version>-macos.tar.gz` |
+| Windows 10/11 (64 bit) | `leveled-audio-<version>-windows-x64.zip` |
+| Linux desktop (Ubuntu, Fedora, Debian …) | `leveled-audio-<version>-linux-x64.tar.gz` |
+| Linux server / Docker, command line only | `leveled-audio-<version>-linux-x64-cli-only.tar.gz` |
 
-The binaries have no runtime dependencies. Windows does not need the VC++ redistributable, and the Linux binary is statically linked. Checksums are in `SHA256SUMS.txt`:
+Version 0.1.0 still uses technical names: `…-universal-apple-darwin` (Mac), `…-x86_64-pc-windows-msvc` (Windows), `…-x86_64-unknown-linux-gnu` (Linux desktop, app only) and `…-x86_64-unknown-linux-musl` (Linux command line). There, ignore `…-aarch64-apple-darwin` and `…-x86_64-apple-darwin`; the universal file covers every Mac.
+
+The programs need no extra installation. Windows does not need the VC++ redistributable, and the command-line-only Linux archive is statically linked and runs on any distribution. Checksums are in `SHA256SUMS.txt`:
 
 ```bash
 shasum -a 256 -c SHA256SUMS.txt --ignore-missing      # macOS
@@ -50,7 +52,7 @@ xattr -d com.apple.quarantine ./leveled-audio
 
 Put `leveled-audio` (or `leveled-audio.exe`) in a folder on your `PATH`, e.g. `/usr/local/bin` or `~/bin`.
 
-**Desktop app:** The archive also contains `leveled-audio-gui` (Windows: `leveled-audio-gui.exe`), and on macOS `Leveled Audio.app`. On Linux it comes as a separate archive, `…-x86_64-unknown-linux-gnu`. It needs the graphics and GTK libraries of a normal desktop (X11 or Wayland, GTK 3), which every desktop distribution ships. See section 3a.
+**Desktop app:** The archive also contains `leveled-audio-gui` (Windows: `leveled-audio-gui.exe`), and on macOS `Leveled Audio.app`. On Linux it is in `…-linux-x64` and needs the graphics and GTK libraries of a normal desktop (X11 or Wayland, GTK 3), which every desktop distribution ships. See section 3a.
 
 ---
 

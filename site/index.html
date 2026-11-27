@@ -196,6 +196,16 @@
       <li>Add WAV files or folders, or drag them into the window.</li>
       <li>Pick a preset, then click <strong>Export</strong>. Results are saved next to the originals as <code>name-leveled-&lt;preset&gt;.wav</code>.</li>
     </ol>
+    <table class="files">
+      <caption>Which file do I need? Pick the one whose name ends like this:</caption>
+      <thead><tr><th scope="col">Your computer</th><th scope="col">File name ends in</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Mac (any model)</th><td><code>-macos.tar.gz</code> <span class="old">(v0.1.0: <code>-universal-apple-darwin.tar.gz</code>)</span></td></tr>
+        <tr><th scope="row">Windows 10/11</th><td><code>-windows-x64.zip</code> <span class="old">(v0.1.0: <code>-x86_64-pc-windows-msvc.zip</code>)</span></td></tr>
+        <tr><th scope="row">Linux desktop</th><td><code>-linux-x64.tar.gz</code> <span class="old">(v0.1.0: <code>-x86_64-unknown-linux-gnu.tar.gz</code>)</span></td></tr>
+        <tr><th scope="row">Linux server / Docker, command line only</th><td><code>-linux-x64-cli-only.tar.gz</code> <span class="old">(v0.1.0: <code>-x86_64-unknown-linux-musl.tar.gz</code>)</span></td></tr>
+      </tbody>
+    </table>
     <p>Prefer the command line? The same processing is available as <code>leveled-audio</code>:</p>
     <pre><code>leveled-audio process recordings/ -r -o done/                 # podcast, −16 LUFS
 leveled-audio process dialogue.wav -o done/ --target-lufs -14  # YouTube video
