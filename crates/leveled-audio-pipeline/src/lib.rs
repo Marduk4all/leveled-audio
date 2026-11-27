@@ -17,6 +17,7 @@ mod denoise_stage;
 mod job;
 mod leveler_stage;
 mod noise;
+mod params;
 mod progress;
 mod report;
 mod settings;
@@ -29,6 +30,7 @@ pub use job::{
 };
 pub use leveled_audio_analysis::{LevelerStats, LoudnessStats, NoiseProfile, ProfileSource};
 pub use noise::{load_profile, save_profile};
+pub use params::{PARAM_GROUPS, PARAMS, ParamKind, ParamSpec, lookup, param, settings_table};
 pub use progress::{CancelToken, NoProgress, Pass, ProgressSink};
 pub use report::{
     AlbumReport, CompressorReport, DenoiseReport, FileReport, GateReport, InputInfo, KnockReport,

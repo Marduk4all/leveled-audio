@@ -260,8 +260,10 @@ impl Default for LevelerSettings {
     fn default() -> Self {
         LevelerSettings {
             enabled: true,
-            strength: 0.6,
-            max_boost_db: 10.0,
+            // Seit dem Abstandstest (2026-11-27): bewusst überkorrigierend,
+            // gleicht wechselnden Mikrofonabstand (1 m ↔ 5 cm) voll aus.
+            strength: 1.3,
+            max_boost_db: 20.0,
             max_cut_db: 10.0,
             pause_max_boost_db: 0.0,
             slew_db_per_s: 2.0,
@@ -434,7 +436,6 @@ impl Settings {
             s.highpass.frequency_hz = 80.0;
             s.knock.reduction_db = 20.0;
             s.denoise.reduction_db = 15.0;
-            s.leveler.strength = 0.8;
             s.compressor.amount = 0.6;
             s.gate.enabled = true;
             s.gate.floor_dbfs = -60.0;
@@ -519,7 +520,7 @@ impl Settings {
     }
 
     /// `patch` rekursiv über diese Einstellungen legen.
-    fn layered(&self, patch: toml::Table) -> std::result::Result<Settings, String> {
+    pub(crate) fn layered(&self, patch: toml::Table) -> std::result::Result<Settings, String> {
         let mut base = toml::Table::try_from(self).map_err(|e| e.to_string())?;
         merge(&mut base, patch);
         toml::Value::Table(base)
@@ -594,9 +595,12 @@ impl Settings {
             ));
         }
         let pr = &d.profile;
-        if !(0.1..=60.0).contains(&pr.min_duration_s) || pr.target_duration_s < pr.min_duration_s {
+        if !(0.1..=60.0).contains(&pr.min_duration_s)
+            || !(0.1..=60.0).contains(&pr.target_duration_s)
+            || pr.target_duration_s < pr.min_duration_s
+        {
             return Err(
-                "denoise.profile: min_duration_s (0,1–60 s) darf target_duration_s nicht übersteigen"
+                "denoise.profile: min_duration_s und target_duration_s 0,1–60 s, Mindestdauer ≤ Zieldauer"
                     .into(),
             );
         }
@@ -604,8 +608,8 @@ impl Settings {
             return Err("denoise.profile.min_confidence muss zwischen 0 und 1 liegen".into());
         }
         let v = &self.leveler;
-        if !(0.0..=1.0).contains(&v.strength) {
-            return Err("leveler.strength muss zwischen 0 und 1 liegen (0–100 %)".into());
+        if !(0.0..=1.3).contains(&v.strength) {
+            return Err("leveler.strength muss zwischen 0 und 1,3 liegen (0–130 %)".into());
         }
         if !(0.0..=20.0).contains(&v.max_boost_db) || !(0.0..=20.0).contains(&v.max_cut_db) {
             return Err(

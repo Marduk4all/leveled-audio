@@ -340,7 +340,7 @@ const PRESET_COMMENTS: &[(&str, &str)] = &[
     ),
     (
         "leveler.strength",
-        "0–1: 1 = Sprecher gleich laut, 0 = Unterschiede bleiben",
+        "0–1,3: 1 = Sprecher gleich laut, 0 = Unterschiede bleiben, über 1 = überkorrigieren",
     ),
     ("leveler.max_boost_db", "größte Anhebung leiser Phrasen"),
     ("leveler.max_cut_db", "größte Absenkung lauter Phrasen"),

@@ -585,13 +585,27 @@ impl PreGain<'_> {
     }
 }
 
-/// Pausen-Messung in Pass 2: Leistung der Ausgabe in Frames mit voller Maske.
+/// Pausen-Messung in Pass 2: Leistung der Ausgabe in Frames mit voller Maske,
+/// zusätzlich ohne den Leveler-Gain (damit die Absenkung je Pause den
+/// Leveler ausgleichen kann).
 struct PauseMeter<'a> {
     mask: &'a [f32],
+    /// Leveler-Kurve, falls der Leveler wirkt.
+    leveler: Option<&'a leveled_audio_analysis::LevelerCurve>,
     first_center: i64,
     hop: usize,
     sum: f64,
+    sum_pre: f64,
     count: u64,
+}
+
+/// Gemessener Pausenpegel vor dem Normalisierungs-Gain (dBFS).
+#[derive(Debug, Clone, Copy)]
+struct PauseLevel {
+    /// Mit Leveler (für den Report).
+    out_db: f64,
+    /// Ohne Leveler-Gain (für die Tiefe je Frame).
+    pre_db: f64,
 }
 
 impl PauseMeter<'_> {
@@ -602,18 +616,25 @@ impl PauseMeter<'_> {
             let k = ((t - self.first_center) as f64 / self.hop as f64).round();
             let k = (k.max(0.0) as usize).min(self.mask.len().saturating_sub(1));
             if self.mask.get(k).is_some_and(|m| *m >= 0.999) {
-                self.sum += out
+                let p = out
                     .iter()
                     .map(|c| (c[from + i] as f64).powi(2))
                     .sum::<f64>()
                     / ch;
+                let lev = self.leveler.map_or(0.0, |c| c.gain_db_at(t) as f64);
+                self.sum += p;
+                self.sum_pre += p * 10f64.powf(-lev / 10.0);
                 self.count += 1;
             }
         }
     }
 
-    fn level_db(&self) -> Option<f64> {
-        (self.count > 0 && self.sum > 0.0).then(|| 10.0 * (self.sum / self.count as f64).log10())
+    fn level(&self) -> Option<PauseLevel> {
+        let db = |s: f64| 10.0 * (s / self.count as f64).log10();
+        (self.count > 0 && self.sum > 0.0).then(|| PauseLevel {
+            out_db: db(self.sum),
+            pre_db: db(self.sum_pre),
+        })
     }
 }
 
@@ -713,14 +734,14 @@ fn measure_pass(
     };
     Ok(MeasureOut {
         meter,
-        pause_db: pause.and_then(|p| p.level_db()),
+        pause_db: pause.and_then(|p| p.level()),
         probe_lufs: probe,
     })
 }
 
 struct MeasureOut {
     meter: LoudnessMeter,
-    pause_db: Option<f64>,
+    pause_db: Option<PauseLevel>,
     /// Lautheit nach geschätztem Gain und Limiter (Limiter-Probe).
     probe_lufs: Option<f64>,
 }
@@ -818,7 +839,7 @@ struct PreparedFile {
     curve: Option<LevelerCurve>,
     leveler_active: bool,
     /// Pausen-Absenkung: Maske je Frame und Pausenpegel aus Pass 2 (vor Gain).
-    gate: Option<(Vec<f32>, Option<f64>)>,
+    gate: Option<(Vec<f32>, Option<PauseLevel>)>,
     compressor: Option<CompressorParams>,
     warnings: Vec<String>,
     /// Messung nach allen Stufen vor dem Normalisierungs-Gain.
@@ -833,11 +854,12 @@ impl PreparedFile {
         self.measured.stats().ok().and_then(|s| s.integrated_lufs)
     }
 
-    /// Tiefe der Pausen-Absenkung für einen Normalisierungs-Gain.
+    /// Mittlere Tiefe der Pausen-Absenkung für einen Normalisierungs-Gain
+    /// (Report; gerendert wird je Frame, siehe `render_curve`).
     fn gate_depth(&self, settings: &Settings, gain_db: f64) -> Option<f64> {
-        let (_, pause_db) = self.gate.as_ref()?;
+        let (_, pause) = self.gate.as_ref()?;
         let g = &settings.gate;
-        Some(((*pause_db)? + gain_db - g.floor_dbfs).clamp(0.0, g.max_attenuation_db))
+        Some(((*pause)?.out_db + gain_db - g.floor_dbfs).clamp(0.0, g.max_attenuation_db))
     }
 
     /// Gain-Stufe für Pass 3: Leveler × Pausen-Absenkung.
@@ -850,9 +872,15 @@ impl PreparedFile {
         if !self.leveler_active {
             c.gain_db.iter_mut().for_each(|g| *g = 0.0);
         }
-        if let (Some(d), Some((mask, _))) = (depth, &self.gate) {
-            for (g, m) in c.gain_db.iter_mut().zip(mask) {
-                *g -= d as f32 * m;
+        // Tiefe je Frame: Der Leveler lässt Pausen nach angehobenen bzw.
+        // abgesenkten Phrasen unterschiedlich laut stehen; jede soll auf dem
+        // Ziel landen. Ohne Leveler ist das die einheitliche Tiefe.
+        if let (Some(_), Some((mask, Some(p)))) = (depth, &self.gate) {
+            let g = &settings.gate;
+            let lim = g.max_attenuation_db as f32;
+            let base = (p.pre_db + gain_db - g.floor_dbfs) as f32;
+            for (v, m) in c.gain_db.iter_mut().zip(mask) {
+                *v -= (base + *v).clamp(0.0, lim) * m;
             }
         }
         Some(LevelerStage::new(c))
@@ -1003,9 +1031,11 @@ fn prepare(
         let pause = match (&gate_mask, &curve) {
             (Some(m), Some(c)) => Some(PauseMeter {
                 mask: m,
+                leveler: leveler_active.then_some(c),
                 first_center: c.first_center,
                 hop: c.hop,
                 sum: 0.0,
+                sum_pre: 0.0,
                 count: 0,
             }),
             _ => None,
@@ -1397,7 +1427,7 @@ fn render(
     };
     report.gate = prep.gate.as_ref().map(|(mask, pause_db)| GateReport {
         floor_dbfs: settings.gate.floor_dbfs,
-        pause_level_dbfs: pause_db.map(|p| p + gain_db),
+        pause_level_dbfs: pause_db.map(|p| p.out_db + gain_db),
         attenuation_db: prep.gate_depth(settings, gain_db).unwrap_or(0.0),
         gated_fraction: if mask.is_empty() {
             0.0

@@ -13,6 +13,9 @@ version = 2
 allow = [
     "MIT",
     "MIT-0",           # borrow-or-share (nur Test-Abhängigkeit jsonschema)
+    "BSL-1.0",         # clipboard-win, error-code (GUI unter Windows, über egui)
+    "OFL-1.1",         # eingebettete Schriften der GUI (epaint_default_fonts), Text in licenses/
+    "Ubuntu-font-1.0", # dito
     "Apache-2.0",
     "Unicode-3.0",
     "Zlib",

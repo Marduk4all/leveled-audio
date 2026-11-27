@@ -829,7 +829,7 @@
             "strength": {
               "type": "number",
               "minimum": 0,
-              "maximum": 1
+              "maximum": 1.3
             },
             "max_boost_db": {
               "type": "number"

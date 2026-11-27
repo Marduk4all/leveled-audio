@@ -46,6 +46,8 @@ xattr -d com.apple.quarantine ./leveled-audio
 
 Lege `leveled-audio` (bzw. `leveled-audio.exe`) in einen Ordner im `PATH`, z. B. `/usr/local/bin` oder `~/bin`.
 
+**Grafische Oberfläche:** Neben der Kommandozeile liegt `leveled-audio-gui` (Windows: `leveled-audio-gui.exe`) im Archiv. Unter Linux gibt es sie als eigenes Archiv `…-x86_64-unknown-linux-gnu`. Sie braucht die Grafik- und GTK-Bibliotheken eines üblichen Desktops (X11 oder Wayland, GTK 3), die jede Desktop-Distribution mitbringt. Siehe Abschnitt 3a.
+
 ---
 
 ## 2. Schnellstart
@@ -104,7 +106,7 @@ Eingaben können einzelne WAV-Dateien und Ordner sein. Mit `-r` werden Unterordn
 | `--loudness-mode per-file\|album` | Lautheit pro Datei (Default) oder gemeinsamer Gain, siehe Abschnitt 6 |
 | `--bit-depth same\|16\|24\|32f` | Bittiefe der Ausgabe (Default `same`; 32-bit-int-Eingaben werden zu 24 bit) |
 | `--reduction-db <dB>` | maximale Rauschabsenkung (Default 12) |
-| `--leveler-strength <0–100>` | Stärke des Levelers in Prozent (Default 60) |
+| `--leveler-strength <0–130>` | Stärke des Levelers in Prozent (Default 130, über 100 überkorrigiert) |
 | `--highpass <Hz>` | Hochpass-Frequenz (Default 70) |
 | `--knock-reduction <dB>` | Absenkung der Tiefen in Knacksern (Default 15; 0 = nur erkennen) |
 | `--compression <0–100>` | Kompressor in Prozent (Default 40) |
@@ -138,6 +140,26 @@ leveled-audio process interview.wav -o fertig/ --naming "{stem}_{lufs}"
 
 ---
 
+## 3a. Grafische Oberfläche (`leveled-audio-gui`)
+
+Eine schlichte Oberfläche zum Testen: Dateien importieren, alle Einstellungen vornehmen, Ergebnisse exportieren. Sie nutzt dieselbe Verarbeitung wie die Kommandozeile. Bei gleichen Einstellungen entstehen dieselben Dateien.
+
+Das Fenster ist von oben nach unten aufgebaut:
+
+1. **Eingabe:** „Dateien hinzufügen…“ und „Ordner hinzufügen…“, oder Dateien und Ordner ins Fenster ziehen. „Unterordner einbeziehen“ entspricht `-r`. Darunter steht, wie viele WAV-Dateien gefunden wurden. Bereits exportierte Dateien (`-leveled-` im Namen) werden beim Ordner-Import übergangen; einzeln hinzugefügt werden sie verarbeitet.
+2. **Einstellungen:**
+   - Preset wählen, ein eigenes Preset laden oder die aktuellen Werte als Preset speichern. Die gespeicherte Datei funktioniert auch mit `leveled-audio --preset`.
+   - „Zurücksetzen“ stellt das gewählte bzw. geladene Preset wieder her.
+   - Darunter alle Einstellungen nach Stufe gruppiert. Jede Gruppe zeigt oben die wichtigen Regler, „Feineinstellungen“ den Rest. Fährst du mit der Maus über einen Regler, erscheint die Kurzbeschreibung aus Abschnitt 4.
+3. **Exportieren / Abbrechen** am unteren Fensterrand, daneben die Anzahl paralleler Dateien und der Status (bereit, in Arbeit, fertig, abgebrochen) mit Fortschritt gesamt und je Datei. Abbrechen löscht Teildateien.
+   - Jede Datei wird **neben dem Original** abgelegt: `aufnahme.wav` → `aufnahme-leveled-podcast-stereo.wav` (bei einem geladenen Preset dessen Dateiname).
+   - Gibt es Zieldateien schon, fragt ein Dialog: „Überschreiben“, „Vorhandene überspringen“ oder „Abbrechen“. Originale werden nie verändert.
+4. **Ergebnis:** Tabelle wie in der Konsole, Hinweise, „JSON-Report speichern…“ und „Ordner öffnen“.
+
+Abhören, Wellenform und Vorschau gibt es in dieser ersten Version nicht.
+
+---
+
 ## 4. Regler: Empfehlungen und Wirkung
 
 **Fix oder per Analyse?** Die Werte der Regler sind fest. Sie stehen im Preset, gelten für alle Dateien gleich und machen das Ergebnis reproduzierbar. Fast alle Regler beschreiben aber eine Absicht relativ zur jeweiligen Datei:
@@ -156,7 +178,7 @@ Was tatsächlich angewendet wurde, steht im Report. Absolut gemeint sind nur Zie
 | `--highpass` | 70 Hz | 80 Hz | Entfernt Rumpeln. Ab etwa 100 Hz verlieren tiefe Stimmen Wärme. |
 | `--knock-reduction` | 15 dB | 20 dB | Knackser leiser. Gleichzeitige Sprache klingt dort kurz dünner. |
 | `--reduction-db` | 12 dB | 15 dB | Weniger Rauschen. Ab etwa 15–18 dB drohen „blubbernde“ Artefakte. |
-| `--leveler-strength` | 60 % | 80 % | Sprecher gleichmäßiger, aber weniger lebendig. |
+| `--leveler-strength` | 130 % | 130 % | Gleicht auch starke Abstandswechsel (1 m ↔ 5 cm) aus; leise Stellen landen etwas über den lauten. 100 % ≈ Referenz, 60 % natürlicher und lebendiger, aber Pegelunterschiede bleiben hörbar. |
 | `--compression` | 40 % (1,5:1) | 60 % (2:1) | Laute Stellen dichter. Zu hoch klingt gepresst. |
 | `--pause-floor` | aus | −60 dBFS | Pausen fast still. Kann an Pausengrenzen „atmen“. |
 | `--loudness-mode` | per-file | per-file | `album` nur für Folgen einer Produktion. |
@@ -232,8 +254,8 @@ leveled-audio process a.wav -o fertig/ --set denoise.reduction_db=15 --set loudn
 | `knock.max_speech_to_low_db` | −15 | −30 … −5 | Sprachband (300–3400 Hz) so weit unter den Tiefen (20–300 Hz) ⇒ Störgeräusch |
 | `knock.reduction_db` | 15 | 0–40 | Absenkung der Tiefen in Knacksern; 0 = nur erkennen |
 | `leveler.enabled` | `true` | | Leveler an/aus |
-| `leveler.strength` | 0,6 | 0–1 | 0 = keine Wirkung, 1 = volle Angleichung |
-| `leveler.max_boost_db` | 10 | 0–20 | größte Anhebung |
+| `leveler.strength` | 1,3 | 0–1,3 | 0 = keine Wirkung, 1 = volle Angleichung, darüber Überkorrektur |
+| `leveler.max_boost_db` | 20 | 0–20 | größte Anhebung |
 | `leveler.max_cut_db` | 10 | 0–20 | größte Absenkung |
 | `leveler.pause_max_boost_db` | 0 | −10–10 | Obergrenze des Gains in langen Pausen |
 | `leveler.slew_db_per_s` | 2 | 0,5–10 | größte Gain-Änderung innerhalb einer Phrase |
@@ -333,7 +355,9 @@ Nutze `--pause-floor -60` oder das Preset `podcast-kraeftig`. Hört man das Raus
 Senke `--reduction-db` (z. B. auf 8). Höre mit `--export-delta`, was entfernt wird. In der Delta-Datei sollte keine Sprache zu hören sein.
 
 **Der Leveler hebt zu viel bzw. zu wenig an.**
-Ändere `--leveler-strength` (0–100) oder begrenze mit `--set leveler.max_boost_db=6`.
+Ändere `--leveler-strength` (0–130) oder begrenze mit `--set leveler.max_boost_db=6`. Die Anhebung ist bei `leveler.max_boost_db` (Default 20 dB) gedeckelt.
+
+Kurze, rauschartige Geräusche zwischen Phrasen (Atmen, Rascheln, Umgreifen des Mikrofons) hebt der Leveler nicht an, auch wenn die Spracherkennung sie als Sprache einstuft.
 
 **Die Ausgabe ist leiser als das Ziel.**
 Steht unter „Hinweise“, dass das Ziel verfehlt wurde, greift der Limiter sehr stark ein. Das betrifft vor allem schon stark komprimiertes Material oder große Anhebungen. Hilfreich ist ein leiseres Ziel oder ein höheres Ceiling, z. B. `--ceiling-dbtp -0.5`.

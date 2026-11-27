@@ -304,6 +304,7 @@ Weil VAD und Frame-Energien der ganzen Datei nach Pass 1 vorliegen, wird die Gai
 3. **Referenz:** `L_ref` = Mitte zwischen unterem und oberem Quartil der Segmentlautheiten (dauergewichtet). Leise Sprecher werden angehoben, laute abgesenkt, symmetrisch. Die absolute Lage ist egal, weil die Normalisierung folgt.
    - *Geändert in Phase 3:* Ursprünglich Median. Bei zwei Sprechern mit je ≈ 50 % Sprechzeit fällt der Median zufällig in einen der beiden Cluster. Dann bekommt ein Sprecher die volle Korrektur und läuft in `max_cut`/`max_boost` (gemessen: −10…+5 dB statt ±5 dB). Die Quartilsmitte ist bei einem Sprecher ≈ Median und bei zwei Sprechern symmetrisch.
    - *Neu in Phase 3:* **Gate.** Phrasen mehr als 20 dB unter `L_ref` (Atmer, Raumgeräusch, fernes Gemurmel) werden wie Pausen behandelt. An deiner Aufnahme 005 hob der Leveler sonst einen leisen Ausklang (≈ 22 dB unter der Sprache) um die vollen +10 dB an.
+   - *Neu nach Phase 6 (Abstandstest):* **Geräusch-Gate.** Phrasen bis 1,5 s mit weniger als 20 % tonalen Frames (spektrale Flachheit < 0,15) gelten ebenfalls als Pause, schon vor der Referenzbildung. Anlass: `Abstand.WAV` (1 m → 50 cm → 5 cm). Beim Heranführen des Mikrofons stufte die VAD Rascheln/Atmen als Sprache ein; diese Stücke lagen nur knapp innerhalb der 20-dB-Grenze, bekamen +10 dB und die kurzen Pausen dazwischen hielten den Gain. Gemessen: Sprache hat 60–70 % tonale Frames (auch bei 1 m), die Geräusche 4 %.
 4. **Soll-Gain:** `g = strength · (L_ref − L_seg)`, begrenzt auf `[−max_cut, +max_boost]`.
 5. **Übergänge:** Gain-Wechsel liegen bevorzugt **in Pausen** (Rampe 250 ms, die vor dem Sprachbeginn endet). Ist die Pause zu kurz, wird über die Grenze geführt, mit Slew-Limit. Innerhalb einer Phrase gilt ein Slew-Limit von 2 dB/s.
 6. **Pausen nicht anheben:**
@@ -315,8 +316,8 @@ Weil VAD und Frame-Energien der ganzen Datei nach Pass 1 vorliegen, wird die Gai
 
 | Parameter | Default | Bereich |
 |---|---|---|
-| `strength` | **60 %** | 0–100 % (0 % ⇒ bitidentisch zu Bypass) |
-| `max_boost_db` | **10** | 0–20 |
+| `strength` | **130 %** (bis 2026-11-27: 60 %) | 0–130 % (0 % ⇒ bitidentisch zu Bypass; über 100 % Überkorrektur) |
+| `max_boost_db` | **20** (bis 2026-11-27: 10) | 0–20 |
 | `max_cut_db` | **10** | 0–20 |
 | `pause_max_boost_db` | **0** | −10–+10 |
 | `slew_db_per_s` | **2** | 0,5–10 |
@@ -552,8 +553,8 @@ statistic = "trimmed"
 
 [leveler]
 enabled = true
-strength = 0.6
-max_boost_db = 10.0
+strength = 1.3
+max_boost_db = 20.0
 max_cut_db = 10.0
 pause_max_boost_db = 0.0
 
@@ -610,7 +611,7 @@ Absolut gemeint sind nur drei Regler: Ziel-Lautheit, True-Peak-Grenze und Hochpa
 | `--highpass` (Hz) | 70 | 80 | fix | Entfernt Rumpeln und Trittschall unterhalb der Frequenz. Höher = schlanker, ab ≈ 100 Hz verlieren tiefe Stimmen Wärme. |
 | `--knock-reduction` (dB) | 15 | 20 | erkannt per Analyse | Absenkung der Tiefen in erkannten Griffgeräuschen. Höher = Knackser leiser; gleichzeitige Sprache klingt dort kurz dünner. 0 = aus. |
 | `--reduction-db` | 12 | 15 | Profil per Analyse | Maximale Rauschabsenkung. Höher = weniger Rauschen, ab ≈ 15–18 dB drohen „blubbernde“ Artefakte (Musical Noise) und dumpfere Sprache. |
-| `--leveler-strength` (%) | 60 | 80 | Referenz per Analyse | Wie stark leise und laute Sprecher angeglichen werden. 100 = gleich laut, 0 = Pegelunterschiede bleiben. Höher klingt gleichmäßiger, aber weniger lebendig. |
+| `--leveler-strength` (%) | 130 | 130 | Referenz per Analyse | Wie stark leise und laute Sprecher angeglichen werden. 100 = gleich laut, 0 = Pegelunterschiede bleiben, darüber Überkorrektur. Höher klingt gleichmäßiger, aber weniger lebendig. *Default seit dem Abstandstest 130 % (vorher 60/80 %), auf deinen Wunsch.* |
 | `--compression` (%) | 40 (≈ 1,5:1) | 60 (≈ 2:1) | Schwelle per Analyse | Fängt kurze laute Stellen (Lachen, Ausrufe) ab. Höher = dichter und gleichmäßiger, zu hoch klingt gepresst. 0 = aus. |
 | `--pause-floor` (dBFS) | aus | −60 | Tiefe per Analyse | Pegel der Sprechpausen in der fertigen Datei. Aus = natürlicher Raumton bleibt. −60 = Pausen fast still. Kann an Pausengrenzen „atmen“ (Rauschen kommt mit der Stimme). |
 | `--loudness-mode` | per-file | per-file | fix | `album`: ein Gain für alle Dateien eines Aufrufs. Nur für Folgen einer Produktion, sonst bleiben leise Dateien leise. |
@@ -840,14 +841,80 @@ Akzeptanzkriterien:
   - Die Pausen-Absenkung probierst du einmal mit `--pause-floor -60` und entscheidest, ob ihr Default aus bleibt.
   - *Ergebnis:* Knackser und Kompressor passen. Die Pausen-Absenkung kam zuerst zu spät und abrupt; nach der Änderung (Haltezeit ab dem letzten Laut, 150-ms-Ausblende, siehe 3.11) freigegeben. Default bleibt aus (natürlich); `podcast-kraeftig` schaltet sie ein.
 
+### Phase 6: Einfache GUI mit egui (≈ 1 Woche) – umgesetzt
+
+> **Stand 2026-11-26:** Umgesetzt mit `eframe`/`egui` 0.37 und `rfd` 0.18.
+> - Start: `cargo run --release -p leveled-audio-gui`.
+> - Neu in der Pipeline: Parametertabelle `params.rs` (48 Einstellungen, Bereiche gegen `validate` getestet) sowie `Settings::get_value`/`set_value`.
+>   - Der Test fand eine Lücke: `denoise.profile.target_duration_s` war nach oben unbegrenzt; jetzt höchstens 60 s.
+> - Die Kommandozeile hat jetzt zusätzlich eine Bibliothek (`leveled_audio_cli`: Eingaben, Stapel ausführen pro Datei/Album, Report). GUI und Kommandozeile rufen dieselbe Funktion `run_plan` auf.
+> - **Änderung nach deinem Test (2026-11-27):** Abschnitt „Ausgabe“ entfernt. Export immer neben das Original als `<Name>-leveled-<Preset>.<Endung>`; vorhandene Ziele nur nach Rückfrage (Überschreiben / Vorhandene überspringen / Abbrechen). Statuszeile (bereit, in Arbeit, fertig, abgebrochen). Exportierte Dateien werden beim Ordner-Import übergangen.
+> - Nicht geprüft: Die Oberfläche selbst habe ich nicht gesehen (kein Bildschirmzugriff); sie startet und läuft ohne Fehlermeldung. Windows und Linux baut erst der Workflow.
+
+**Ziel:** Eine schlichte Oberfläche zum Testen. Dateien importieren, alle Parameter einstellen, Ergebnisse exportieren. Kein Abhören, keine Wellenform, keine Vorschau; das kann später kommen (siehe „Später“). Die GUI nutzt dieselbe Pipeline wie die Kommandozeile, also liefert sie bei gleichen Einstellungen dieselben Dateien.
+
+**Technik:**
+- Neues Crate `leveled-audio-gui` mit dem Programm `leveled-audio-gui`.
+- `eframe`/`egui` (MIT/Apache-2.0) für die Oberfläche, `rfd` (MIT) für Datei- und Ordnerdialoge.
+- Keine Audio-Wiedergabe, also keine Audio-Bibliothek.
+- Die Verarbeitung läuft in einem Hintergrund-Thread. Fortschritt und Abbruch gehen über die vorhandenen Schnittstellen `ProgressSink` und `CancelToken`, sodass die Oberfläche bedienbar bleibt.
+- **Eine gemeinsame Parametertabelle** (Schlüssel, Bezeichnung, Einheit, Bereich, Schrittweite, Kurzbeschreibung aus 4.5) speist die Bedienelemente. Bereiche und `Settings::validate` können so nicht auseinanderlaufen. Die Kommentare von `preset show` sollen später ebenfalls daraus kommen.
+
+**Fenster (ein Fenster, von oben nach unten):**
+1. **Eingabe:** Buttons „Dateien hinzufügen…“ und „Ordner hinzufügen…“, Checkbox „Unterordner einbeziehen“. Dateien lassen sich auch ins Fenster ziehen.
+   - Liste der Dateien mit „Entfernen“ und „Alle entfernen“.
+2. **Ausgabe:** Zielordner wählen, Benennungsschema, „Vorhandene überschreiben“ bzw. „überspringen“.
+3. **Einstellungen:**
+   - Preset-Auswahl (die vier eingebauten), „Preset laden…“ und „Preset speichern…“ als TOML, „Auf Preset zurücksetzen“.
+   - Darunter **alle** Parameter, nach Stufe gruppiert in einklappbaren Abschnitten (Hochpass, Rauschreduktion, Knackser, Leveler, Pausen-Absenkung, Kompressor, Lautheit, Limiter, Ausgabe).
+   - Je Parameter ein Regler oder Auswahlfeld im erlaubten Bereich, mit der Kurzbeschreibung als Tooltip.
+   - Die wichtigsten Regler aus 4.5 stehen oben im Abschnitt, die Feinheiten darunter.
+4. **Verarbeitung:** „Start“ und „Abbrechen“, ein Fortschrittsbalken gesamt und je laufender Datei.
+5. **Ergebnis:** Tabelle wie in der Konsole (Eingang, Rauschen, Knackser, Leveler, Ausgang, Gain, Kompressor, Limiter, Status) mit den Hinweisen darunter.
+   - Button „JSON-Report speichern…“ und „Zielordner öffnen“.
+
+**Release:**
+- Der Workflow baut zusätzlich `leveled-audio-gui`: macOS Universal, Windows (ohne Konsolenfenster, statische C-Laufzeit) und Linux `x86_64-unknown-linux-gnu`.
+- Linux ist hier **nicht** statisch. Eine Oberfläche braucht die Grafikbibliotheken des Systems (X11 bzw. Wayland, OpenGL), die jeder Desktop mitbringt. Die Kommandozeile bleibt statisch (musl).
+
+Akzeptanzkriterien:
+- [ ] Startet ohne Zusatzinstallation auf macOS und Windows. Unter Linux reicht ein üblicher Desktop; die Voraussetzungen stehen in der Anleitung.
+- [x] Import: Dateien, Ordner (mit/ohne Unterordner) und Ziehen ins Fenster. Doppelte Dateien werden nur einmal aufgenommen, Nicht-WAV-Dateien ignoriert.
+- [x] **Alle** Parameter aus den Settings sind einstellbar. Ein Test prüft, dass jeder Schlüssel der Settings in der Parametertabelle steht und dass ihre Bereichsgrenzen von `validate` akzeptiert werden, Werte knapp außerhalb nicht.
+- [x] Preset speichern und wieder laden ergibt dieselben Einstellungen. Eine von der GUI gespeicherte Datei funktioniert auch mit `leveled-audio --preset`. *Test: alle 48 Parameter wie über die Regler geändert, gespeichert (mit Kommentaren) und mit dem Leser der Kommandozeile geladen ⇒ identisch.*
+- [x] Gleiche Einstellungen ⇒ byte-identische Ausgabe wie die Kommandozeile (automatischer Test). *Geprüft über den gemeinsamen Weg: GUI-Auftrag = direkte Pipeline = Lauf mit dem gespeicherten Preset, byte-identisch. Beide Oberflächen nutzen `run_plan`.*
+- [x] Während der Verarbeitung bleibt das Fenster bedienbar (Hintergrund-Thread). Abbrechen löscht Teildateien wie bei der Kommandozeile. *Test für den Abbruch.*
+- [x] Defekte Dateien erscheinen als Fehler in der Tabelle, der Rest wird verarbeitet. *Test: 2 ok, 1 Fehler; doppelte Eingaben und Nicht-WAV-Dateien werden ignoriert.*
+- [x] **Bedienabnahme durch dich.** *Abgenommen am 2026-11-27 auf macOS. Dabei gefunden und behoben: Die GUI vergaß einen laufenden Export schon im nächsten Frame (Status blieb auf „bereit“, Export-Knopf aktiv, keine Ergebnistabelle). Neuer Test klickt headless durch Export, Status, Rückfrage und Ergebnis.*
+
+Offene Fragen:
+- Sprache der Oberfläche: nur Deutsch (Vorschlag) oder umschaltbar?
+
+> **Nachtrag 2026-11-27: Abstandstest gegen Referenz.** `Abstand.WAV` (Sprache bei 1 m, 50 cm, 5 cm; Original −39,0 / −31,8 / −18,9 LUFS je Abschnitt, also 20 dB Spanne).
+>
+> | Fassung | 1 m | 50 cm | Wechsel (Geräusche) | 5 cm |
+> |---|---|---|---|---|
+> | Referenz | −15,5 | −16,0 | −34,9 | −15,5 |
+> | leveled-audio vorher (60 %) | −18,7 | −16,6 | −24,3 | −14,3 |
+> | leveled-audio jetzt (60 %) | −19,0 | −16,8 | −36,2 | −14,3 |
+> | jetzt 100 %, max. Anhebung 20 dB | −16,0 | −16,2 | −36,9 | −16,0 |
+> | jetzt 130 %, max. Anhebung 20 dB | −14,7 | −16,2 | −38,0 | −17,6 |
+>
+> - Geräusch-Gate im Leveler (siehe 3.6, Schritt 3): Geräusche im Wechsel jetzt auf Referenz-Niveau statt 10 dB darüber.
+> - `leveler.strength` jetzt bis 130 % (Wunsch: über Referenz hinaus). 100 % entspricht hier Referenz, 130 % korrigiert über.
+> - Bestehende Aufnahmen: 001–004 byte-identisch zu Phase 5, 005 Leveler-Gain um ≈ 0,4 dB verschoben.
+> - **Neuer Standard (dein Wunsch nach dem Hörtest):** `leveler.strength` 1,3 und `max_boost_db` 20 in allen Presets (`podcast-kraeftig` hatte 0,8, jetzt ebenfalls 1,3). Folgen an 001–005: LRA kleiner (z. B. 003: 2,9 → 1,4 LU), Limiter greift mehr (003: 3,1 → 5,9 dB, 004: 3,6 → 6,1 dB).
+> - Dabei gefunden: Bei starkem Leveler stehen Pausen unterschiedlich laut (nach angehobenen bzw. abgesenkten Phrasen); die Pausen-Absenkung hatte nur eine Tiefe und verfehlte das Ziel in einzelnen Pausen um > 2 dB. Jetzt Tiefe **je Frame** aus dem Pausenpegel ohne Leveler-Gain plus dem Leveler-Gain an der Stelle: jede Pause landet auf dem Ziel (Test: −60,1 / −60,1 dBFS).
+> - Höhenanhebung bei fernem Mikrofon (Referenz ≈ +3 dB über 3 kHz bei 1 m) bleibt offen, siehe „Später“.
+
 ### Später (vorgemerkt, Architektur bereits vorbereitet)
 
 - Mehrere Rauschprofile pro Datei: Segmentierung bei Änderungen des Rauschpegels oder -spektrums, Profil pro Region, Überblendung der Profile. Danach adaptives Tracking.
 - Pre-Chain: Hum-Removal (Kammfilter auf 50/60 Hz + Harmonische). Der Hochpass ist in Phase 5 vorgezogen.
-- Optionaler Klang-EQ (z. B. Präsenz/Höhen, wie Referenz +2–3 dB über 6 kHz), Default aus.
+- Optionaler Klang-EQ (z. B. Präsenz/Höhen, wie Referenz +2–3 dB über 6 kHz), Default aus. Adaptiv je Abstand: Referenz hebt bei 1 m die Höhen über 3 kHz um ≈ 3 dB an (Abstandstest).
 - FLAC/MP3-Eingabe (`symphonia`), FLAC-Ausgabe. Für MP3-Ausgabe muss die Lizenz von LAME geprüft werden (LGPL).
 - Mehrspur-Modus (synchrone Sprecherspuren), Noise-Shaping, Metadaten (bext/iXML/Cue) übernehmen.
-- GUI auf Basis von `leveled-audio-pipeline` (Vorschau einzelner Regionen per Seek ist möglich).
+- GUI-Ausbau nach Phase 6: Abhören mit A/B-Vergleich (Original/Bearbeitet, lautheitsangeglichen), Wellenform, Vorschau einzelner Regionen per Seek, macOS-App-Bundle mit Icon.
 - Signierung und Notarisierung (macOS) sowie Installer.
 
 ---

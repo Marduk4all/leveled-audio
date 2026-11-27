@@ -4,6 +4,10 @@ name: Release
 # Windows und Linux, prüft, dass sie ohne Zusatzinstallation laufen, und
 # hängt sie mit SHA256-Summen an ein GitHub-Release.
 #
+# Kommandozeile `leveled-audio`: alle Plattformen, Linux statisch (musl).
+# GUI `leveled-audio-gui`: macOS, Windows und Linux (glibc, braucht die
+# Grafikbibliotheken eines üblichen Desktops).
+#
 # Auslöser: ein Tag `v*` (z. B. `git tag v0.1.0 && git push origin v0.1.0`)
 # oder manuell (dann nur Artefakte, kein Release).
 
@@ -34,6 +38,9 @@ jobs:
             os: windows-latest
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
+          # Nur die GUI (die Kommandozeile kommt statisch aus dem musl-Build).
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -45,14 +52,24 @@ jobs:
       - name: musl-Werkzeuge
         if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Linux-Pakete für die GUI
+        if: contains(matrix.target, 'linux-gnu')
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
       - name: Bauen
-        run: cargo build --release --locked --target ${{ matrix.target }} -p leveled-audio-cli
+        shell: bash
+        run: |
+          case "${{ matrix.target }}" in
+            *musl) pkgs="-p leveled-audio-cli" ;;
+            *linux-gnu) pkgs="-p leveled-audio-gui" ;;
+            *) pkgs="-p leveled-audio-cli -p leveled-audio-gui" ;;
+          esac
+          cargo build --release --locked --target ${{ matrix.target }} $pkgs
 
       - name: Prüfen (Linux statisch gelinkt)
-        if: contains(matrix.target, 'linux')
+        if: contains(matrix.target, 'musl')
         run: |
           bin=target/${{ matrix.target }}/release/leveled-audio
           file "$bin"
@@ -71,6 +88,9 @@ jobs:
           Write-Output $deps
           if ($deps -match '(?i)vcruntime|msvcp|ucrtbase|api-ms-win-crt') { throw "dynamische C-Laufzeit gefunden" }
           & $bin --version
+          $gui = & $dumpbin.FullName /dependents "target/${{ matrix.target }}/release/leveled-audio-gui.exe" | Out-String
+          Write-Output $gui
+          if ($gui -match '(?i)vcruntime|msvcp|ucrtbase|api-ms-win-crt') { throw "GUI: dynamische C-Laufzeit gefunden" }
       - name: Prüfen (macOS)
         if: contains(matrix.target, 'apple')
         run: |
@@ -86,8 +106,13 @@ jobs:
           [ "$GITHUB_REF_TYPE" = "tag" ] || ver=dev
           name=leveled-audio-$ver-${{ matrix.target }}
           mkdir -p "dist/$name"
-          exe=leveled-audio; [[ "${{ matrix.target }}" == *windows* ]] && exe=leveled-audio.exe
-          cp "target/${{ matrix.target }}/release/$exe" README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
+          x=""; [[ "${{ matrix.target }}" == *windows* ]] && x=.exe
+          for b in leveled-audio leveled-audio-gui; do
+            f="target/${{ matrix.target }}/release/$b$x"
+            [ -f "$f" ] && cp "$f" "dist/$name/"
+          done
+          cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
+          [ -f "dist/$name/leveled-audio-gui$x" ] && cp -r licenses "dist/$name/"
           cp docs/ANLEITUNG.md docs/report.schema.json "dist/$name/"
           cd dist
           if [[ "${{ matrix.target }}" == *windows* ]]; then
@@ -105,7 +130,9 @@ jobs:
         if: contains(matrix.target, 'apple')
         with:
           name: bin-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/leveled-audio
+          path: |
+            target/${{ matrix.target }}/release/leveled-audio
+            target/${{ matrix.target }}/release/leveled-audio-gui
 
   universal:
     name: macOS Universal
@@ -122,12 +149,15 @@ jobs:
           [ "$GITHUB_REF_TYPE" = "tag" ] || ver=dev
           name=leveled-audio-$ver-universal-apple-darwin
           mkdir -p "dist/$name"
-          lipo -create -output "dist/$name/leveled-audio" \
-            bin-aarch64-apple-darwin/leveled-audio bin-x86_64-apple-darwin/leveled-audio
-          chmod +x "dist/$name/leveled-audio"
-          lipo -info "dist/$name/leveled-audio"
+          for b in leveled-audio leveled-audio-gui; do
+            lipo -create -output "dist/$name/$b" \
+              bin-aarch64-apple-darwin/$b bin-x86_64-apple-darwin/$b
+            chmod +x "dist/$name/$b"
+            lipo -info "dist/$name/$b"
+          done
           "dist/$name/leveled-audio" --version
           cp README.md LICENSE-MIT LICENSE-APACHE docs/ANLEITUNG.md docs/report.schema.json "dist/$name/"
+          cp -r licenses "dist/$name/"
           cd dist && tar czf "$name.tar.gz" "$name" && rm -r "$name"
       - uses: actions/upload-artifact@v4
         with:
@@ -149,7 +179,7 @@ jobs:
       - name: SHA256-Summen
         run: |
           cd dist
-          rm -f leveled-audio   # nackte Binaries für lipo nicht veröffentlichen
+          rm -f leveled-audio leveled-audio-gui   # nackte Binaries für lipo nicht veröffentlichen
           sha256sum leveled-audio-* > SHA256SUMS.txt
           cat SHA256SUMS.txt
       - name: Release anlegen

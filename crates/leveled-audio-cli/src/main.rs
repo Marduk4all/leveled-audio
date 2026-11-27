@@ -1,23 +1,23 @@
 //! leveled-audio – Batch-Verarbeitung von Sprachaufnahmen (WAV).
 
 mod args;
-mod inputs;
-mod summary;
 mod ui;
 
 use anyhow::{Context, Result, bail};
 use args::{Cli, Command, PresetCmd, ProcessArgs, ProfileCmd};
 use clap::Parser;
-use inputs::{Job, collect_inputs, plan_outputs};
+use leveled_audio_cli::batch::run_plan;
+use leveled_audio_cli::inputs::{collect_inputs, plan_outputs};
+use leveled_audio_cli::summary::{
+    self, FileOutcome, JsonMeta, print_album, print_summary, write_json,
+};
 use leveled_audio_pipeline::{
-    AlbumReport, CancelToken, JobOptions, LoudnessMode, NoProgress, PRESET_NAMES, Pass,
-    ProgressSink, Settings, analyze_file, learn_profile, load_profile, preset_description,
-    process_album, process_file, run_batch, save_profile,
+    CancelToken, JobOptions, NoProgress, PRESET_NAMES, ProgressSink, Settings, analyze_file,
+    learn_profile, load_profile, preset_description, run_batch, save_profile,
 };
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use summary::{FileOutcome, JsonMeta, print_album, print_summary, write_json};
 
 const EXIT_FAILURES: u8 = 1;
 const EXIT_USAGE: u8 = 2;
@@ -171,28 +171,6 @@ fn apply_overrides(settings: &mut Settings, overrides: &[String]) -> Result<()> 
     settings.validate().map_err(anyhow::Error::msg)
 }
 
-/// Leitet Fortschrittsmeldungen mit umgerechneter Datei-ID weiter (Album-Modus
-/// zählt nur die zu verarbeitenden Dateien).
-struct MappedProgress<'a> {
-    inner: &'a dyn ProgressSink,
-    ids: Vec<usize>,
-}
-
-impl ProgressSink for MappedProgress<'_> {
-    fn file_started(&self, id: usize, frames: u64, passes: u32) {
-        self.inner.file_started(self.ids[id], frames, passes);
-    }
-    fn advance(&self, id: usize, pass: Pass, frames: u64) {
-        self.inner.advance(self.ids[id], pass, frames);
-    }
-    fn pass_added(&self, id: usize, frames: u64) {
-        self.inner.pass_added(self.ids[id], frames);
-    }
-    fn file_finished(&self, id: usize) {
-        self.inner.file_finished(self.ids[id]);
-    }
-}
-
 fn cmd_process(a: ProcessArgs, quiet: bool) -> Result<u8> {
     let mut settings = load_settings(&a.preset)?;
     // Reihenfolge: Preset ← --set ← eigene Flags.
@@ -261,8 +239,8 @@ fn cmd_process(a: ProcessArgs, quiet: bool) -> Result<u8> {
         settings.gate.enabled = false;
     }
     if let Some(p) = a.leveler_strength {
-        if !(0.0..=100.0).contains(&p) {
-            bail!("--leveler-strength muss zwischen 0 und 100 liegen");
+        if !(0.0..=130.0).contains(&p) {
+            bail!("--leveler-strength muss zwischen 0 und 130 liegen");
         }
         settings.leveler.strength = p / 100.0;
     }
@@ -305,97 +283,19 @@ fn cmd_process(a: ProcessArgs, quiet: bool) -> Result<u8> {
     let jobs = a.jobs.unwrap_or_else(default_jobs);
     let names: Vec<String> = plan.iter().map(|j| j.display().to_string()).collect();
     let ui = ui::Progress::new(&names, quiet);
-    if settings.loudness.mode == LoudnessMode::Album {
-        let (results, album) = run_album(plan, &settings, &opts, jobs, &ui, &cancel);
-        ui.finish();
-        if !quiet {
-            print_album(&album);
-        }
-        let meta = JsonMeta {
-            command: "process",
-            settings: &settings,
-            album: Some(&album),
-        };
-        return finish(&results, &cancel, a.report_json.as_deref(), meta, quiet);
-    }
-    let results = run_batch(plan, jobs, |id, job| {
-        let outcome = match job {
-            Job::Skip { input, output } => FileOutcome::skipped(input.display, input.path, output),
-            Job::Process { input, output } => {
-                let r = process_file(
-                    &input.path,
-                    &output,
-                    &settings,
-                    &opts,
-                    id,
-                    &ui as &dyn ProgressSink,
-                    &cancel,
-                );
-                FileOutcome::from_result(input.display, input.path, r)
-            }
-        };
-        ui.file_done(id);
-        outcome
+    let (results, album) = run_plan(plan, &settings, &opts, jobs, &ui, &cancel, &|id| {
+        ui.file_done(id)
     });
     ui.finish();
+    if let (false, Some(a)) = (quiet, &album) {
+        print_album(a);
+    }
     let meta = JsonMeta {
         command: "process",
         settings: &settings,
-        album: None,
+        album: album.as_ref(),
     };
     finish(&results, &cancel, a.report_json.as_deref(), meta, quiet)
-}
-
-/// Album-Modus: alle zu verarbeitenden Dateien gemeinsam; übersprungene
-/// Dateien zählen nicht zur Album-Lautheit.
-fn run_album(
-    plan: Vec<Job>,
-    settings: &Settings,
-    opts: &JobOptions,
-    jobs: usize,
-    ui: &ui::Progress,
-    cancel: &CancelToken,
-) -> (Vec<FileOutcome>, AlbumReport) {
-    let mut ids = Vec::new();
-    let mut items = Vec::new();
-    for (i, job) in plan.iter().enumerate() {
-        if let Job::Process { input, output } = job {
-            ids.push(i);
-            items.push((input.path.clone(), output.clone()));
-        }
-    }
-    let progress = MappedProgress { inner: ui, ids };
-    let outcome = process_album(items, settings, opts, jobs, &progress, cancel);
-    let mut reports = outcome.files.into_iter();
-    let mut album = outcome.album;
-    let skipped = plan
-        .iter()
-        .filter(|j| matches!(j, Job::Skip { .. }))
-        .count();
-    if skipped > 0 {
-        album.warnings.push(format!(
-            "{skipped} übersprungene Datei(en) zählen nicht zur Album-Lautheit"
-        ));
-    }
-    let results = plan
-        .into_iter()
-        .enumerate()
-        .map(|(id, job)| {
-            let o = match job {
-                Job::Skip { input, output } => {
-                    FileOutcome::skipped(input.display, input.path, output)
-                }
-                Job::Process { input, .. } => FileOutcome::from_result(
-                    input.display,
-                    input.path,
-                    reports.next().expect("ein Ergebnis je Datei"),
-                ),
-            };
-            ui.file_done(id);
-            o
-        })
-        .collect();
-    (results, album)
 }
 
 fn finish(

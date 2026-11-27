@@ -131,8 +131,9 @@ pub struct ProcessArgs {
     /// Keinen Leveler (Angleichen unterschiedlich lauter Sprecher)
     #[arg(long)]
     pub no_leveler: bool,
-    /// Leveler in Prozent (Default 60): gleicht leise und laute Sprecher an. 100 = gleich laut,
-    /// 0 = Unterschiede bleiben. Höher klingt gleichmäßiger, aber weniger lebendig
+    /// Leveler in Prozent, 0–130 (Default 130): gleicht leise und laute Sprecher an. 100 = gleich
+    /// laut, 0 = Unterschiede bleiben, über 100 = überkorrigieren. Höher klingt gleichmäßiger,
+    /// aber weniger lebendig
     #[arg(long, value_name = "PROZENT")]
     pub leveler_strength: Option<f64>,
     /// Dieses Rauschprofil (JSON) für alle Dateien verwenden

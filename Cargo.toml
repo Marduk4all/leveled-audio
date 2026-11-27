@@ -15,6 +15,7 @@ leveled-audio-analysis = { path = "crates/leveled-audio-analysis" }
 leveled-audio-io = { path = "crates/leveled-audio-io" }
 leveled-audio-pipeline = { path = "crates/leveled-audio-pipeline" }
 leveled-audio-testkit = { path = "crates/leveled-audio-testkit" }
+leveled-audio-cli = { path = "crates/leveled-audio-cli" }
 
 ebur128 = "0.1.11"
 realfft = "3.5"
@@ -29,6 +30,8 @@ anyhow = "1.0"
 ctrlc = "3.5"
 hound = "3.5"
 jsonschema = { version = "0.63", default-features = false }
+eframe = "0.37"
+rfd = "0.18"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

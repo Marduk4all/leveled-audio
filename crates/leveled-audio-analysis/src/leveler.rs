@@ -10,6 +10,9 @@
 //!    (der Median fiele zufällig in einen der beiden Cluster).
 //!    Phrasen mehr als `gate_below_ref_db` unter der Referenz (Atmer, Raumgeräusch,
 //!    weit entferntes Gemurmel) werden wie Pausen behandelt, also nicht angehoben.
+//!    Ebenso kurze Phrasen ohne tonale Anteile (Atmen, Rascheln, Griffgeräusche
+//!    beim Umgreifen des Mikrofons): Echte Sprache hat auch bei 1 m Abstand
+//!    überwiegend tonale Frames, solche Geräusche kaum.
 //! 4. Soll-Gain = Stärke · (Referenz − Pegel), begrenzt auf ±Grenzen.
 //!    Phrasen unter 300 ms („mhm“) übernehmen den Gain der Nachbarphrase.
 //! 5. Innerhalb einer Phrase: Slew-Limit und nullphasige Glättung (kein Pumpen).
@@ -33,6 +36,12 @@ pub struct LevelerParams {
     pub slew_db_per_s: f64,
     /// Phrasen, die so weit unter der Referenz liegen, gelten als Pause.
     pub gate_below_ref_db: f64,
+    /// Phrasen bis zu dieser Dauer werden auf tonale Anteile geprüft.
+    pub noise_check_max_s: f64,
+    /// Frames mit spektraler Flachheit darunter gelten als tonal.
+    pub tonal_flatness: f32,
+    /// Kurze Phrasen mit weniger tonalen Frames gelten als Geräusch (wie Pause).
+    pub min_tonal_frac: f64,
     pub min_segment_s: f64,
     pub long_segment_s: f64,
     pub window_s: f64,
@@ -52,6 +61,9 @@ impl Default for LevelerParams {
             pause_max_boost_db: 0.0,
             slew_db_per_s: 2.0,
             gate_below_ref_db: 20.0,
+            noise_check_max_s: 1.5,
+            tonal_flatness: 0.15,
+            min_tonal_frac: 0.2,
             min_segment_s: 0.3,
             long_segment_s: 6.0,
             window_s: 3.0,
@@ -78,7 +90,7 @@ pub struct LevelerCurve {
 pub struct LevelerStats {
     /// Anzahl gelevelter Phrasen.
     pub phrases: usize,
-    /// Als Sprache erkannt, aber zu leise (wie Pause behandelt).
+    /// Als Sprache erkannt, aber zu leise oder rauschartig (wie Pause behandelt).
     pub gated: usize,
     /// Referenzpegel (K-gewichtet, rauschkompensiert, dBFS).
     pub reference_db: Option<f64>,
@@ -196,6 +208,25 @@ pub fn leveler_curve(
     if segs.is_empty() {
         return curve;
     }
+    // Kurze rauschartige Phrasen (Atmen, Rascheln) sind keine Sprache.
+    let mut noisy = 0;
+    if f.flatness.len() >= n {
+        let check_f = f.frames_for(p.noise_check_max_s);
+        segs.retain(|&(a, b)| {
+            let tonal = f.flatness[a..b]
+                .iter()
+                .filter(|&&v| v < p.tonal_flatness)
+                .count();
+            let keep = b - a > check_f || tonal as f64 >= p.min_tonal_frac * (b - a) as f64;
+            noisy += usize::from(!keep);
+            keep
+        });
+        if segs.is_empty() {
+            curve.stats.gated = noisy;
+            curve.stats.phrases = 0;
+            return curve;
+        }
+    }
 
     // 1. Sprechleistung je Frame.
     let floor = 10f64.powf(p.floor_dbfs / 10.0);
@@ -242,7 +273,7 @@ pub fn leveler_curve(
     // Sehr leise „Phrasen“ nicht leveln, sondern wie Pausen behandeln.
     let before = segs.len();
     segs.retain(|&(a, b)| mean_db(a, b) >= reference - p.gate_below_ref_db);
-    curve.stats.gated = before - segs.len();
+    curve.stats.gated = noisy + before - segs.len();
     curve.stats.phrases = segs.len();
     // Ohne Stärke bleibt die Kurve flach; die Referenz dient dann nur dem Kompressor.
     if segs.is_empty() || p.strength <= 0.0 {
@@ -577,6 +608,44 @@ mod tests {
         // nicht mit angehoben (seit Phase 5 auch bei kurzen End-Bereichen).
         assert!(at(9.4) > 0.5, "{}", at(9.4));
         assert!(at(10.8) <= 1e-6, "{}", at(10.8));
+    }
+
+    #[test]
+    fn short_noisy_phrases_are_not_boosted() {
+        // Mikrofon wird von 1 m an den Mund geführt: dazwischen kurze, leise,
+        // rauschartige „Phrasen“ (Rascheln, Atmen) in einer langen Pause.
+        let (mut f, c) = scene(&[
+            (1.0, None),
+            (5.0, Some(-40.0)),
+            (0.7, None),
+            (0.4, Some(-50.0)),
+            (0.7, None),
+            (0.4, Some(-50.0)),
+            (0.9, None),
+            (5.0, Some(-20.0)),
+            (1.0, None),
+        ]);
+        let t = |s: f64| (s / hop_s()) as usize;
+        // Sprache tonal, die beiden kurzen Stücke rauschartig.
+        f.flatness = vec![0.05; f.k_db.len()];
+        for k in t(6.7)..t(7.1) {
+            f.flatness[k] = 0.4;
+        }
+        for k in t(7.8)..t(8.2) {
+            f.flatness[k] = 0.4;
+        }
+        let cv = leveler_curve(&f, &c, 0.0, &LevelerParams::default());
+        assert_eq!((cv.stats.phrases, cv.stats.gated), (2, 2));
+        // Die Pause ist jetzt lang: Gain auf `pause_max_boost_db` (0).
+        assert!(cv.gain_db[t(8.0)] <= 1e-6, "{}", cv.gain_db[t(8.0)]);
+        assert!(cv.gain_db[t(6.9)] < 1.0, "{}", cv.gain_db[t(6.9)]);
+        // Leise Sprache wird weiter angehoben.
+        assert!(cv.gain_db[t(3.5)] > 5.0);
+
+        // Dieselben Stücke tonal (kurzes „ja“): bleiben Sprache.
+        f.flatness = vec![0.05; f.k_db.len()];
+        let cv = leveler_curve(&f, &c, 0.0, &LevelerParams::default());
+        assert_eq!(cv.stats.phrases, 4);
     }
 
     #[test]

@@ -7,6 +7,8 @@ von Griffgeräuschen, adaptiver Leveler, Kompressor, optionale Pausen-Absenkung,
 (ITU-R BS.1770-4 / EBU R128, pro Datei oder als Album) und True-Peak-Limiter, Presets mit Schichtung,
 JSON-Report mit Schema, Release-Builds. Siehe [PLAN.md](PLAN.md).
 
+**Grafische Oberfläche:** `cargo run --release -p leveled-audio-gui` (einfach: importieren, einstellen, exportieren).
+
 **Bedienungsanleitung:** [docs/ANLEITUNG.md](docs/ANLEITUNG.md) · **Report-Schema:** [docs/report.schema.json](docs/report.schema.json)
 
 Kette: Hochpass → Rauschreduktion + Knackser-Absenkung → Leveler (+ Pausen-Absenkung) → Kompressor →
@@ -58,8 +60,8 @@ leveled-audio process aufnahmen/ -o fertig/ --preset podcast-kraeftig
 # Einzelne Regler (Empfehlungen und Wirkung: Anleitung, Abschnitt 4)
 leveled-audio process interview.wav -o fertig/ --pause-floor -60 --compression 60 --knock-reduction 20
 
-# Leveler stärker (Default 60 %) oder ganz aus
-leveled-audio process interview.wav -o fertig/ --leveler-strength 90
+# Leveler sanfter (Default 130 %, überkorrigierend) oder ganz aus
+leveled-audio process interview.wav -o fertig/ --leveler-strength 60
 leveled-audio process interview.wav -o fertig/ --no-leveler
 
 # Stärker entrauschen, oder Rauschreduktion ganz aus
