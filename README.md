@@ -7,7 +7,7 @@ von Griffgeräuschen, adaptiver Leveler, Kompressor, optionale Pausen-Absenkung,
 (ITU-R BS.1770-4 / EBU R128, pro Datei oder als Album) und True-Peak-Limiter, Presets mit Schichtung,
 JSON-Report mit Schema, Release-Builds. Siehe [PLAN.md](PLAN.md).
 
-**Grafische Oberfläche:** `cargo run --release -p leveled-audio-gui` (einfach: importieren, einstellen, exportieren).
+**Grafische Oberfläche:** `cargo run --release -p leveled-audio-gui` (einfach: importieren, einstellen, exportieren). Als macOS-Programm ohne Terminal: `scripts/macos-app.sh` erzeugt `target/release/Leveled Audio.app` (mit Icon); in den Release-Archiven liegt es fertig bei (Anleitung, Abschnitt 3a).
 
 **Bedienungsanleitung:** [docs/ANLEITUNG.md](docs/ANLEITUNG.md) · **Report-Schema:** [docs/report.schema.json](docs/report.schema.json)
 
@@ -54,7 +54,7 @@ leveled-audio process staffel/ -o fertig/ --loudness-mode album
 leveled-audio preset show ebu-r128 > mein.toml
 leveled-audio process aufnahmen/ -o fertig/ --preset mein.toml --set denoise.reduction_db=15
 
-# Kräftiger Klang (Pausen fast still, dichter; nahe Referenz) statt natürlich
+# Kräftiger Klang (Pausen fast still, dichter) statt natürlich
 leveled-audio process aufnahmen/ -o fertig/ --preset podcast-kraeftig
 
 # Einzelne Regler (Empfehlungen und Wirkung: Anleitung, Abschnitt 4)

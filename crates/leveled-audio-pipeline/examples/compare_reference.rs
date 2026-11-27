@@ -1,4 +1,4 @@
-//! Vergleich einer leveled-audio-Ausgabe mit einer Referenzfassung (z. B. Referenz).
+//! Vergleich einer leveled-audio-Ausgabe mit einer Referenzfassung (z. B. von einem anderen Werkzeug bearbeitet).
 //!
 //! Aufruf:
 //! `cargo run --release -p leveled-audio-pipeline --example compare_reference -- <unsere.wav> <referenz.wav> [--table]`

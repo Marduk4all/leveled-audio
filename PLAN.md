@@ -373,7 +373,7 @@ Fallstricke:
 
 ### 3.11 Pausen-Absenkung (Noisefloor-Regler) – Phase 5
 
-**Anlass:** Vergleich von 004 mit der Referenz-Fassung, die du am 2026-11-26 als Referenz bereitgestellt hast. In der Sprache liegen beide innerhalb von 1–2 dB. In den Pausen gibt es einen großen Unterschied:
+**Anlass:** Vergleich von 004 mit der Referenzfassung, die du am 2026-11-26 als Referenz bereitgestellt hast. In der Sprache liegen beide innerhalb von 1–2 dB. In den Pausen gibt es einen großen Unterschied:
 
 | Fassung | Pausen (leiseste 5 % der 50-ms-Abschnitte) | Abstand Pause zu Sprache |
 |---|---|---|
@@ -401,7 +401,7 @@ Mehr Rauschreduktion allein ist keine Lösung. Über ≈ 15–20 dB hinaus entst
    - Hinter der Sprache bleibt Restrauschen, in den Pausen ist es fast still. Der Wechsel kann hörbar sein, deshalb hat 3.6 bewusst nicht in Pausen abgesenkt.
    - Gegenmittel: weiche Rampen, die Mindestpausenlänge und `max_attenuation_db` als Obergrenze. Ob das reicht, entscheidet die Hörabnahme.
 6. **Fehlklassifikation:** Leise Silben, die die VAD als Pause einstuft, würden mit abgesenkt. Der Report nennt deshalb den Anteil abgesenkter Zeit.
-   - Für 004 ist offen, was bei 0–1,25 s, bei ≈ 8 s und ab 12,75 s zu hören ist. Referenz behandelt diese Stellen anders als leveled-audio.
+   - Für 004 ist offen, was bei 0–1,25 s, bei ≈ 8 s und ab 12,75 s zu hören ist. Die Referenz behandelt diese Stellen anders als leveled-audio.
    - Diese Stellen werden vor dem Einstellen der Defaults angehört.
 
 | Parameter | Default (Vorschlag) | Bereich |
@@ -450,7 +450,7 @@ CLI: `--compression <0–100>`, `--no-compression`.
 **Anlass:** In 004 sind bei 0–1,25 s, ≈ 8 s und ab 12,75 s Knackgeräusche des Handmikrofons. Die VAD stuft sie als **Sprache** ein (`S`):
 - Sie sind tieffrequent und damit spektral „tonal“, die Flachheit liegt bei 0,00–0,06 wie bei stimmhafter Sprache.
 - Deshalb hebt der Leveler den Anfang um bis zu +7 dB an.
-- Referenz lässt diese Stellen 5–15 dB leiser.
+- Die Referenz lässt diese Stellen 5–15 dB leiser.
 
 Messung an 004 (35-ms-Frames, nur Frames über −50 dBFS):
 
@@ -602,7 +602,7 @@ Bei derselben Einstellung bekommt eine leise, verrauschte Datei deshalb andere K
 
 Absolut gemeint sind nur drei Regler: Ziel-Lautheit, True-Peak-Grenze und Hochpass-Frequenz.
 
-**Empfehlungen:** „Natürlich“ ist der Default in den Podcast-Presets und entspricht deinem Wunsch. „Kräftig“ kommt näher an die Referenz-Fassungen heran: Pausen fast still, dichterer Klang.
+**Empfehlungen:** „Natürlich“ ist der Default in den Podcast-Presets und entspricht deinem Wunsch. „Kräftig“ kommt näher an die Referenzfassungen heran: Pausen fast still, dichterer Klang.
 
 | Regler (CLI) | Natürlich (Default) | Kräftig | fix / per Analyse | Was sich ändert |
 |---|---|---|---|---|
@@ -616,7 +616,7 @@ Absolut gemeint sind nur drei Regler: Ziel-Lautheit, True-Peak-Grenze und Hochpa
 | `--pause-floor` (dBFS) | aus | −60 | Tiefe per Analyse | Pegel der Sprechpausen in der fertigen Datei. Aus = natürlicher Raumton bleibt. −60 = Pausen fast still. Kann an Pausengrenzen „atmen“ (Rauschen kommt mit der Stimme). |
 | `--loudness-mode` | per-file | per-file | fix | `album`: ein Gain für alle Dateien eines Aufrufs. Nur für Folgen einer Produktion, sonst bleiben leise Dateien leise. |
 
-Die Werte unter „Kräftig“ sind Vorschläge vor der Hörabnahme. Sie werden mit dem Vergleichsskript gegen die Referenz-Fassungen geprüft und danach festgelegt.
+Die Werte unter „Kräftig“ sind Vorschläge vor der Hörabnahme. Sie werden mit dem Vergleichsskript gegen die Referenzfassungen geprüft und danach festgelegt.
 
 Umsetzung in Phase 5:
 - Zusätzliches eingebautes Preset `podcast-kraeftig`, abgeleitet von `podcast-stereo`.
@@ -766,14 +766,14 @@ Akzeptanzkriterien:
 
 > **Stand 2026-11-26:** Umgesetzt, 96 Tests grün, clippy sauber. Hörabnahme bestanden (Knackser, Kompressor, Pausen-Übergänge nach Nachbesserung). Abweichungen vom Plan stehen in 3.7, 3.12 und 3.13.
 > - Hörproben: `Audio Samples - leveled-audio/F_Phase5_natuerlich/` (Default) und `G_Phase5_kraeftig/`, dazu `report_phase5_*.json`.
-> - Vergleich mit Referenz: `cargo run --release -p leveled-audio-pipeline --example compare_reference -- <unsere.wav> <referenz.wav> [--table]`.
+> - Vergleich mit der Referenz: `cargo run --release -p leveled-audio-pipeline --example compare_reference -- <unsere.wav> <referenz.wav> [--table]`.
 
-Anlass ist der Vergleich mit den Referenz-Fassungen 001–005, die du am 2026-11-26 als Referenz bereitgestellt hast (3.11–3.13).
+Anlass ist der Vergleich mit den Referenzfassungen 001–005, die du am 2026-11-26 als Referenz bereitgestellt hast (3.11–3.13).
 
 **Deine Antworten:**
 1. In 004 sind bei 0–1,25 s, ≈ 8 s und ab 12,75 s Knackgeräusche des Handmikrofons.
 2. Es soll eher natürlich klingen.
-3. Weitere Referenz-Referenzen liegen vor (001–005).
+3. Weitere Referenzfassungen liegen vor (001–005).
 
 **Vergleich Original / Referenz / leveled-audio (Phase 4)** über alle fünf Paare:
 
@@ -787,9 +787,9 @@ Anlass ist der Vergleich mit den Referenz-Fassungen 001–005, die du am 2026-11
 
 **Folgerungen:**
 - **Störgeräusche:** Die Knackser werden heute als Sprache behandelt und sogar angehoben. Das ist ein Fehler, keine Geschmacksfrage. Daher neu: Hochpass und Störgeräusch-Erkennung (3.13).
-- **Pausen:** Referenz gatet hart. Für den gewünschten natürlichen Klang ist die Pausen-Absenkung (3.11) nur ein Regler und standardmäßig **aus**.
-- **Höhen:** Referenz hebt sie an. Ein EQ ist eine Geschmacksfrage und bleibt bei „natürlich“ draußen (vorgemerkt unter „Später“).
-- **Lautheit:** Referenz trifft −16 bis auf 0,1–0,3 LU darüber, leveled-audio liegt 0,1–0,4 LU darunter. Die Schwelle der Korrekturiteration (3.7) sinkt von 0,5 auf **0,3 LU**. Bei kurzen Dateien kostet das wenig. Bei langen ist die Abweichung selten groß, weil der Kompressor dem Limiter Arbeit abnimmt.
+- **Pausen:** Die Referenz gatet hart. Für den gewünschten natürlichen Klang ist die Pausen-Absenkung (3.11) nur ein Regler und standardmäßig **aus**.
+- **Höhen:** Die Referenz hebt sie an. Ein EQ ist eine Geschmacksfrage und bleibt bei „natürlich“ draußen (vorgemerkt unter „Später“).
+- **Lautheit:** Die Referenz trifft −16 bis auf 0,1–0,3 LU darüber, leveled-audio liegt 0,1–0,4 LU darunter. Die Schwelle der Korrekturiteration (3.7) sinkt von 0,5 auf **0,3 LU**. Bei kurzen Dateien kostet das wenig. Bei langen ist die Abweichung selten groß, weil der Kompressor dem Limiter Arbeit abnimmt.
 
 Lieferumfang:
 - Hochpass im Pre-Chain-Slot (3.13).
@@ -808,7 +808,7 @@ Akzeptanzkriterien:
     - Erkannt werden 21 Regionen, darunter auch Knackser in Pausen außerhalb der genannten Bereiche (bei 5,0 s, 11,0 s und ab 14,3 s).
     - In den Sprachbereichen gibt es keine erkannten Störgeräusche.
   - **Wirkung:** In den 16 Fenstern zu je 250 ms der Knackser-Bereiche ist die Ausgabe im Mittel **14,8 dB leiser als in Phase 4**, mindestens 5,1 dB.
-    - Gegenüber Referenz: Median +1,9 dB.
+    - Gegenüber der Referenz: Median +1,9 dB.
     - Ausreißer bis +15 dB gibt es dort, wo Referenz Pausen hart gatet (0,5 s, ab 13,75 s), nicht bei Knacksern. Mit `podcast-kraeftig` (Pausen-Absenkung) schließt sich diese Lücke weitgehend.
   - Sprache: im Median −0,5 dB gegenüber Phase 4.
   - Der Leveler hebt die Knackser nicht mehr an. Der Anfang liegt bei −22,6 statt −16,3 dBFS (Referenz −28,3).
@@ -831,13 +831,13 @@ Akzeptanzkriterien:
 - [x] **Alle fünf Referenzpaare:**
   - Lautheit −16 ± 0,3 LUFS. *Natürlich −16,0 … −16,3, kräftig −16,1 … −16,3.*
   - Limiter-Absenkung bei 004 ≤ 4 dB (bisher 8,6 dB). *3,6 dB.*
-  - In Sprachbereichen liegt der 250-ms-Pegelverlauf im Median innerhalb von ±2 dB der Referenz-Fassung (nach Angleich der Gesamtlautheit). *|Median| 0,6–1,2 dB.*
-  - Tiefenanteil (< 150 Hz) jetzt wie Referenz (004: −4,7 statt Original −2,6, Referenz −5,0).
+  - In Sprachbereichen liegt der 250-ms-Pegelverlauf im Median innerhalb von ±2 dB der Referenzfassung (nach Angleich der Gesamtlautheit). *|Median| 0,6–1,2 dB.*
+  - Tiefenanteil (< 150 Hz) jetzt wie die Referenz (004: −4,7 statt Original −2,6, Referenz −5,0).
   - Pausen bei „kräftig“: −64 … −79 dBFS (Referenz −49 … −114).
   - *Abweichung:* „004 ohne Korrekturiteration“ ist nicht ganz erfüllt. Ein zusätzlicher Render-Durchlauf entfällt dank Limiter-Probe; der Gain wird aber aus der Probe korrigiert. Kurze Dateien (001, 003) brauchen noch einen zweiten Durchlauf.
 - [x] Performance bleibt ≥ 50× Echtzeit (3 h Stereo). Bestehende Tests grün. JSON-Report validiert gegen Schema-Version 2. *1-h-Stereodatei aus 004: 55× Echtzeit, 63 MB Speicher, sowohl natürlich als auch kräftig. Bestehende Tests: Isolierte Stufentests laufen ohne Hochpass/Kompressor.*
 - [x] **Hörabnahme durch dich:**
-  - 001–005 im Vergleich mit Referenz: Knackser deutlich leiser, Sprache natürlich, keine abgeschnittenen Laute, laute Stellen nicht gequetscht.
+  - 001–005 im Vergleich mit der Referenz: Knackser deutlich leiser, Sprache natürlich, keine abgeschnittenen Laute, laute Stellen nicht gequetscht.
   - Die Pausen-Absenkung probierst du einmal mit `--pause-floor -60` und entscheidest, ob ihr Default aus bleibt.
   - *Ergebnis:* Knackser und Kompressor passen. Die Pausen-Absenkung kam zuerst zu spät und abrupt; nach der Änderung (Haltezeit ab dem letzten Laut, 150-ms-Ausblende, siehe 3.11) freigegeben. Default bleibt aus (natürlich); `podcast-kraeftig` schaltet sie ein.
 
@@ -890,7 +890,7 @@ Akzeptanzkriterien:
 Offene Fragen:
 - Sprache der Oberfläche: nur Deutsch (Vorschlag) oder umschaltbar?
 
-> **Nachtrag 2026-11-27: Abstandstest gegen Referenz.** `Abstand.WAV` (Sprache bei 1 m, 50 cm, 5 cm; Original −39,0 / −31,8 / −18,9 LUFS je Abschnitt, also 20 dB Spanne).
+> **Nachtrag 2026-11-27: Abstandstest gegen die Referenzfassung.** `Abstand.WAV` (Sprache bei 1 m, 50 cm, 5 cm; Original −39,0 / −31,8 / −18,9 LUFS je Abschnitt, also 20 dB Spanne).
 >
 > | Fassung | 1 m | 50 cm | Wechsel (Geräusche) | 5 cm |
 > |---|---|---|---|---|
@@ -900,8 +900,8 @@ Offene Fragen:
 > | jetzt 100 %, max. Anhebung 20 dB | −16,0 | −16,2 | −36,9 | −16,0 |
 > | jetzt 130 %, max. Anhebung 20 dB | −14,7 | −16,2 | −38,0 | −17,6 |
 >
-> - Geräusch-Gate im Leveler (siehe 3.6, Schritt 3): Geräusche im Wechsel jetzt auf Referenz-Niveau statt 10 dB darüber.
-> - `leveler.strength` jetzt bis 130 % (Wunsch: über Referenz hinaus). 100 % entspricht hier Referenz, 130 % korrigiert über.
+> - Geräusch-Gate im Leveler (siehe 3.6, Schritt 3): Geräusche im Wechsel jetzt auf Niveau der Referenz statt 10 dB darüber.
+> - `leveler.strength` jetzt bis 130 % (Wunsch: über die Referenz hinaus). 100 % entspricht hier der Referenz, 130 % korrigiert über.
 > - Bestehende Aufnahmen: 001–004 byte-identisch zu Phase 5, 005 Leveler-Gain um ≈ 0,4 dB verschoben.
 > - **Neuer Standard (dein Wunsch nach dem Hörtest):** `leveler.strength` 1,3 und `max_boost_db` 20 in allen Presets (`podcast-kraeftig` hatte 0,8, jetzt ebenfalls 1,3). Folgen an 001–005: LRA kleiner (z. B. 003: 2,9 → 1,4 LU), Limiter greift mehr (003: 3,1 → 5,9 dB, 004: 3,6 → 6,1 dB).
 > - Dabei gefunden: Bei starkem Leveler stehen Pausen unterschiedlich laut (nach angehobenen bzw. abgesenkten Phrasen); die Pausen-Absenkung hatte nur eine Tiefe und verfehlte das Ziel in einzelnen Pausen um > 2 dB. Jetzt Tiefe **je Frame** aus dem Pausenpegel ohne Leveler-Gain plus dem Leveler-Gain an der Stelle: jede Pause landet auf dem Ziel (Test: −60,1 / −60,1 dBFS).
@@ -911,10 +911,10 @@ Offene Fragen:
 
 - Mehrere Rauschprofile pro Datei: Segmentierung bei Änderungen des Rauschpegels oder -spektrums, Profil pro Region, Überblendung der Profile. Danach adaptives Tracking.
 - Pre-Chain: Hum-Removal (Kammfilter auf 50/60 Hz + Harmonische). Der Hochpass ist in Phase 5 vorgezogen.
-- Optionaler Klang-EQ (z. B. Präsenz/Höhen, wie Referenz +2–3 dB über 6 kHz), Default aus. Adaptiv je Abstand: Referenz hebt bei 1 m die Höhen über 3 kHz um ≈ 3 dB an (Abstandstest).
+- Optionaler Klang-EQ (z. B. Präsenz/Höhen, wie die Referenz +2–3 dB über 6 kHz), Default aus. Adaptiv je Abstand: Die Referenz hebt bei 1 m die Höhen über 3 kHz um ≈ 3 dB an (Abstandstest).
 - FLAC/MP3-Eingabe (`symphonia`), FLAC-Ausgabe. Für MP3-Ausgabe muss die Lizenz von LAME geprüft werden (LGPL).
 - Mehrspur-Modus (synchrone Sprecherspuren), Noise-Shaping, Metadaten (bext/iXML/Cue) übernehmen.
-- GUI-Ausbau nach Phase 6: Abhören mit A/B-Vergleich (Original/Bearbeitet, lautheitsangeglichen), Wellenform, Vorschau einzelner Regionen per Seek, macOS-App-Bundle mit Icon.
+- GUI-Ausbau nach Phase 6: Abhören mit A/B-Vergleich (Original/Bearbeitet, lautheitsangeglichen), Wellenform, Vorschau einzelner Regionen per Seek, Notarisierung des macOS-Bundles (braucht ein Apple-Entwicklerkonto). *Das App-Bundle selbst (`scripts/macos-app.sh`, Start ohne Terminal) gibt es seit 2026-11-27, ebenso Programm-Icon (`scripts/make-icon.py` → `assets/icon.png`), Farbschema und den Anzeigenamen „Leveled Audio“.*
 - Signierung und Notarisierung (macOS) sowie Installer.
 
 ---

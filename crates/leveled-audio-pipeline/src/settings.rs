@@ -402,7 +402,7 @@ pub fn preset_description(name: &str) -> &'static str {
     match name {
         "podcast-stereo" => "natürlich, −16 LUFS (Default)",
         "podcast-mono" => "natürlich, −19 LUFS (Mono-Podcast)",
-        "podcast-kraeftig" => "kräftig: Pausen fast still, dichter (nahe Referenz), −16 LUFS",
+        "podcast-kraeftig" => "kräftig: Pausen fast still, dichter, −16 LUFS",
         "ebu-r128" => "Rundfunk, −23 LUFS, natürlicher Raumton",
         _ => "",
     }

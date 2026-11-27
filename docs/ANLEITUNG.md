@@ -100,7 +100,7 @@ Eingaben können einzelne WAV-Dateien und Ordner sein. Mit `-r` werden Unterordn
 
 | Option | Wirkung |
 |---|---|
-| `--preset <name or datei.toml>` | `podcast-stereo` (Default, natürlich, −16 LUFS), `podcast-kraeftig` (nahe Referenz), `podcast-mono` (−19), `ebu-r128` (−23) oder eigene Datei |
+| `--preset <name or datei.toml>` | `podcast-stereo` (Default, natürlich, −16 LUFS), `podcast-kraeftig` (Pausen fast still, dichter), `podcast-mono` (−19), `ebu-r128` (−23) oder eigene Datei |
 | `--target-lufs <LUFS>` | Ziel-Lautheit, z. B. `--target-lufs -18` |
 | `--ceiling-dbtp <dBTP>` | Obergrenze des True Peak, z. B. `--ceiling-dbtp -2` |
 | `--loudness-mode per-file\|album` | Lautheit pro Datei (Default) oder gemeinsamer Gain, siehe Abschnitt 6 |
@@ -140,7 +140,12 @@ leveled-audio process interview.wav -o fertig/ --naming "{stem}_{lufs}"
 
 ---
 
-## 3a. Grafische Oberfläche (`leveled-audio-gui`)
+## 3a. Grafische Oberfläche „Leveled Audio“ (`leveled-audio-gui`)
+
+**Starten ohne Terminal:**
+- **macOS:** Im Archiv liegt `Leveled Audio.app`. Ziehe es in den Ordner „Programme“ und starte es per Doppelklick, aus dem Launchpad oder dem Dock. Beim ersten Start meldet macOS, dass die App von einem nicht verifizierten Entwickler stammt (sie ist nicht bei Apple notarisiert). Dann einmal mit der rechten Maustaste auf die App klicken → „Öffnen“ → „Öffnen“, oder unter Systemeinstellungen → Datenschutz & Sicherheit → „Dennoch öffnen“. Selbst gebaut: `cargo build --release -p leveled-audio-gui` und danach `scripts/macos-app.sh`; das Bundle liegt dann in `target/release/Leveled Audio.app`.
+- **Windows:** `leveled-audio-gui.exe` per Doppelklick; es öffnet sich kein Konsolenfenster.
+- **Linux:** `leveled-audio-gui` aus dem Dateimanager starten oder einen Starter (`.desktop`-Datei) anlegen.
 
 Eine schlichte Oberfläche zum Testen: Dateien importieren, alle Einstellungen vornehmen, Ergebnisse exportieren. Sie nutzt dieselbe Verarbeitung wie die Kommandozeile. Bei gleichen Einstellungen entstehen dieselben Dateien.
 
@@ -178,7 +183,7 @@ Was tatsächlich angewendet wurde, steht im Report. Absolut gemeint sind nur Zie
 | `--highpass` | 70 Hz | 80 Hz | Entfernt Rumpeln. Ab etwa 100 Hz verlieren tiefe Stimmen Wärme. |
 | `--knock-reduction` | 15 dB | 20 dB | Knackser leiser. Gleichzeitige Sprache klingt dort kurz dünner. |
 | `--reduction-db` | 12 dB | 15 dB | Weniger Rauschen. Ab etwa 15–18 dB drohen „blubbernde“ Artefakte. |
-| `--leveler-strength` | 130 % | 130 % | Gleicht auch starke Abstandswechsel (1 m ↔ 5 cm) aus; leise Stellen landen etwas über den lauten. 100 % ≈ Referenz, 60 % natürlicher und lebendiger, aber Pegelunterschiede bleiben hörbar. |
+| `--leveler-strength` | 130 % | 130 % | Gleicht auch starke Abstandswechsel (1 m ↔ 5 cm) aus; leise Stellen landen etwas über den lauten. 100 % = gleich laut, 60 % natürlicher und lebendiger, aber Pegelunterschiede bleiben hörbar. |
 | `--compression` | 40 % (1,5:1) | 60 % (2:1) | Laute Stellen dichter. Zu hoch klingt gepresst. |
 | `--pause-floor` | aus | −60 dBFS | Pausen fast still. Kann an Pausengrenzen „atmen“. |
 | `--loudness-mode` | per-file | per-file | `album` nur für Folgen einer Produktion. |

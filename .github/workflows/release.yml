@@ -114,6 +114,10 @@ jobs:
           cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
           [ -f "dist/$name/leveled-audio-gui$x" ] && cp -r licenses "dist/$name/"
           cp docs/ANLEITUNG.md docs/report.schema.json "dist/$name/"
+          # macOS: GUI zusätzlich als Programm-Bundle (Start ohne Terminal).
+          if [[ "${{ matrix.target }}" == *apple* ]]; then
+            scripts/macos-app.sh "dist/$name/leveled-audio-gui" "dist/$name"
+          fi
           cd dist
           if [[ "${{ matrix.target }}" == *windows* ]]; then
             7z a "$name.zip" "$name" > /dev/null
@@ -158,6 +162,7 @@ jobs:
           "dist/$name/leveled-audio" --version
           cp README.md LICENSE-MIT LICENSE-APACHE docs/ANLEITUNG.md docs/report.schema.json "dist/$name/"
           cp -r licenses "dist/$name/"
+          scripts/macos-app.sh "dist/$name/leveled-audio-gui" "dist/$name"
           cd dist && tar czf "$name.tar.gz" "$name" && rm -r "$name"
       - uses: actions/upload-artifact@v4
         with:

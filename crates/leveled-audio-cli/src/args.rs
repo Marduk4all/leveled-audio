@@ -66,7 +66,7 @@ pub struct ProcessArgs {
     /// Ausgabeordner (wird bei Bedarf angelegt)
     #[arg(short = 'o', long = "output-dir")]
     pub output_dir: PathBuf,
-    /// Preset: podcast-stereo (natürlich, Default), podcast-kraeftig (nahe Referenz), podcast-mono,
+    /// Preset: podcast-stereo (natürlich, Default), podcast-kraeftig (Pausen fast still, dichter), podcast-mono,
     /// ebu-r128 oder Pfad zu einer .toml-Datei (siehe `leveled-audio preset list`)
     #[arg(long, default_value = "podcast-stereo")]
     pub preset: String,

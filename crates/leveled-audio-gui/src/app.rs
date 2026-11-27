@@ -14,6 +14,73 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+/// Name des Programms (Fenstertitel, App-Bundle).
+pub const APP_NAME: &str = "Leveled Audio";
+
+/// Farben der Oberfläche (passend zum Programm-Icon).
+mod theme {
+    use eframe::egui::{Color32, CornerRadius, Stroke, Visuals};
+
+    /// Indigo (Icon oben).
+    pub const ACCENT: Color32 = Color32::from_rgb(0x4C, 0x3B, 0xCF);
+    /// Türkis (Icon unten).
+    pub const TEAL: Color32 = Color32::from_rgb(0x0E, 0x8F, 0x84);
+    pub const GOLD: Color32 = Color32::from_rgb(0xE8, 0xA3, 0x1A);
+    pub const OK: Color32 = Color32::from_rgb(0x1B, 0x8A, 0x4B);
+    pub const ERROR: Color32 = Color32::from_rgb(0xC6, 0x28, 0x28);
+    /// Hintergrund der Export-Leiste.
+    pub const BAR: Color32 = Color32::from_rgb(0xEC, 0xEA, 0xFB);
+
+    pub fn visuals() -> Visuals {
+        let mut v = Visuals::light();
+        v.panel_fill = Color32::from_rgb(0xF7, 0xF7, 0xFC);
+        v.window_fill = Color32::WHITE;
+        v.faint_bg_color = Color32::from_rgb(0xF0, 0xEF, 0xFA);
+        v.extreme_bg_color = Color32::WHITE;
+        v.hyperlink_color = ACCENT;
+        v.error_fg_color = ERROR;
+        v.warn_fg_color = GOLD;
+        v.selection.bg_fill = Color32::from_rgb(0xC9, 0xC3, 0xF5);
+        v.selection.stroke = Stroke::new(1.0, ACCENT);
+        let r = CornerRadius::same(6);
+        let w = &mut v.widgets;
+        w.inactive.weak_bg_fill = Color32::from_rgb(0xE6, 0xE4, 0xF7);
+        w.inactive.bg_fill = Color32::from_rgb(0xD9, 0xD5, 0xF5);
+        w.hovered.weak_bg_fill = Color32::from_rgb(0xD6, 0xD1, 0xF6);
+        w.hovered.bg_fill = Color32::from_rgb(0xC9, 0xC3, 0xF5);
+        w.hovered.bg_stroke = Stroke::new(1.0, ACCENT);
+        w.active.weak_bg_fill = Color32::from_rgb(0xB8, 0xB0, 0xF0);
+        w.active.bg_fill = ACCENT;
+        w.active.bg_stroke = Stroke::new(1.0, ACCENT);
+        for s in [&mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open] {
+            s.corner_radius = r;
+        }
+        v.slider_trailing_fill = true;
+        v
+    }
+}
+
+/// Abschnittsüberschrift mit farbiger Nummer.
+fn section(ui: &mut egui::Ui, nr: &str, title: &str) {
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        egui::Frame::new()
+            .fill(theme::ACCENT)
+            .corner_radius(egui::CornerRadius::same(11))
+            .inner_margin(egui::Margin::symmetric(7, 1))
+            .show(ui, |ui| {
+                ui.label(egui::RichText::new(nr).strong().color(egui::Color32::WHITE));
+            });
+        ui.label(
+            egui::RichText::new(title)
+                .heading()
+                .strong()
+                .color(theme::ACCENT),
+        );
+    });
+    ui.add_space(2.0);
+}
+
 /// Fortschritt je Datei: (erledigt, gesamt, Durchgang).
 #[derive(Default)]
 struct ProgressState {
@@ -101,7 +168,7 @@ fn default_jobs() -> usize {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        cc.egui_ctx.set_visuals(egui::Visuals::light());
+        cc.egui_ctx.set_visuals(theme::visuals());
         let settings = Settings::default();
         App {
             inputs: Vec::new(),
@@ -227,7 +294,7 @@ impl App {
     // ---------------------------------------------------------------- UI
 
     fn ui_input(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui.button("Dateien hinzufügen…").clicked()
                 && let Some(files) = rfd::FileDialog::new()
                     .add_filter("WAV", &["wav", "WAV"])
@@ -274,8 +341,13 @@ impl App {
             self.recount();
         }
         match &self.wav_count {
-            Ok(n) => ui.label(format!("{n} WAV-Datei(en)")),
-            Err(e) => ui.colored_label(egui::Color32::DARK_RED, e),
+            Ok(0) => ui.label(egui::RichText::new("0 WAV-Dateien").weak()),
+            Ok(n) => ui.label(
+                egui::RichText::new(format!("{n} WAV-Datei(en)"))
+                    .strong()
+                    .color(theme::TEAL),
+            ),
+            Err(e) => ui.colored_label(theme::ERROR, e),
         };
     }
 
@@ -287,7 +359,12 @@ impl App {
         let mut choice = None;
         egui::Modal::new(egui::Id::unique("overwrite")).show(ctx, |ui| {
             ui.set_max_width(520.0);
-            ui.heading("Dateien überschreiben?");
+            ui.label(
+                egui::RichText::new("Dateien überschreiben?")
+                    .heading()
+                    .strong()
+                    .color(theme::ACCENT),
+            );
             ui.label(format!("{} Zieldatei(en) gibt es schon:", list.len()));
             for p in list.iter().take(8) {
                 ui.monospace(
@@ -300,7 +377,15 @@ impl App {
             }
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if ui.button("Überschreiben").clicked() {
+                if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new("Überschreiben").color(egui::Color32::WHITE),
+                        )
+                        .fill(theme::ACCENT),
+                    )
+                    .clicked()
+                {
                     choice = Some(Some(Existing::Overwrite));
                 }
                 if ui.button("Vorhandene überspringen").clicked() {
@@ -319,7 +404,7 @@ impl App {
     }
 
     fn ui_presets(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label("Preset");
             let mut chosen = None;
             egui::ComboBox::from_id_salt("preset")
@@ -433,10 +518,7 @@ impl App {
             }
         }
         if let Err(e) = self.settings.validate() {
-            ui.colored_label(
-                egui::Color32::DARK_RED,
-                format!("Ungültige Einstellung: {e}"),
-            );
+            ui.colored_label(theme::ERROR, format!("Ungültige Einstellung: {e}"));
         }
     }
 
@@ -445,22 +527,27 @@ impl App {
             let st = r.progress.state.lock().expect("Mutex");
             let total = r.names.len();
             ui.horizontal(|ui| {
-                ui.spinner();
-                ui.strong(if r.cancel.is_cancelled() {
-                    "Status: wird abgebrochen …".to_string()
+                ui.add(egui::Spinner::new().color(theme::ACCENT));
+                let (text, color) = if r.cancel.is_cancelled() {
+                    ("Status: wird abgebrochen …".to_string(), theme::GOLD)
                 } else {
-                    format!(
-                        "Status: in Arbeit – {} von {total} Dateien fertig ({:.0} s)",
-                        st.done,
-                        r.started.elapsed().as_secs_f64()
+                    (
+                        format!(
+                            "Status: in Arbeit – {} von {total} Dateien fertig ({:.0} s)",
+                            st.done,
+                            r.started.elapsed().as_secs_f64()
+                        ),
+                        theme::ACCENT,
                     )
-                });
+                };
+                ui.label(egui::RichText::new(text).strong().color(color));
             });
             ui.horizontal(|ui| {
                 ui.add(
                     egui::ProgressBar::new(st.done as f32 / total.max(1) as f32)
                         .text(format!("{} von {total} Dateien", st.done))
-                        .desired_width(400.0),
+                        .fill(theme::ACCENT)
+                        .desired_width(320.0),
                 );
                 if r.cancel.is_cancelled() {
                     ui.label("wird abgebrochen …");
@@ -477,16 +564,26 @@ impl App {
                 ui.add(
                     egui::ProgressBar::new(frac.min(1.0))
                         .text(format!("{pass}: {}", r.names[*id]))
-                        .desired_width(600.0),
+                        .fill(theme::TEAL)
+                        .desired_width(ui.available_width().min(600.0)),
                 );
             }
         } else {
             let ok = self.settings.validate().is_ok() && matches!(self.wav_count, Ok(n) if n > 0);
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
+                let enabled = ok && self.confirm.is_none();
+                let label = egui::RichText::new("▶ Exportieren").strong().size(15.0);
+                let button = if enabled {
+                    egui::Button::new(label.color(egui::Color32::WHITE)).fill(theme::ACCENT)
+                } else {
+                    egui::Button::new(label)
+                };
                 if ui
                     .add_enabled(
-                        ok && self.confirm.is_none(),
-                        egui::Button::new("▶ Exportieren").min_size([120.0, 28.0].into()),
+                        enabled,
+                        button
+                            .min_size([130.0, 30.0].into())
+                            .corner_radius(egui::CornerRadius::same(8)),
                     )
                     .on_hover_text(format!(
                         "Schreibt neben jede Originaldatei: Name{}{}.wav",
@@ -499,27 +596,28 @@ impl App {
                 }
                 ui.label("Parallele Dateien");
                 ui.add(egui::Slider::new(&mut self.jobs, 1..=16));
-                ui.strong(match &self.finished {
-                    _ if !ok => "Status: bereit, sobald WAV-Dateien hinzugefügt sind".to_string(),
-                    None => "Status: bereit".to_string(),
-                    Some(f) if f.cancelled => "Status: abgebrochen".to_string(),
+                let weak = ui.visuals().weak_text_color();
+                let (text, color) = match &self.finished {
+                    _ if !ok => (
+                        "Status: bereit, sobald WAV-Dateien hinzugefügt sind".to_string(),
+                        weak,
+                    ),
+                    None => ("Status: bereit".to_string(), theme::TEAL),
+                    Some(f) if f.cancelled => ("Status: abgebrochen".to_string(), theme::GOLD),
                     Some(f) => {
                         let err = f.outcome.files.iter().filter(|o| o.is_error()).count();
                         if err > 0 {
-                            format!("Status: fertig, {err} Fehler")
+                            (format!("Status: fertig, {err} Fehler"), theme::ERROR)
                         } else {
-                            "Status: fertig".to_string()
+                            ("Status: fertig ✔".to_string(), theme::OK)
                         }
                     }
-                });
+                };
+                ui.label(egui::RichText::new(text).strong().color(color));
             });
         }
         if let Some((err, m)) = &self.message {
-            let color = if *err {
-                egui::Color32::DARK_RED
-            } else {
-                egui::Color32::DARK_GREEN
-            };
+            let color = if *err { theme::ERROR } else { theme::OK };
             ui.colored_label(color, m);
         }
     }
@@ -751,7 +849,7 @@ fn result_table(ui: &mut egui::Ui, files: &[FileOutcome]) {
                                 ui.label("abgebrochen");
                             }
                             Status::Error { .. } => {
-                                ui.colored_label(egui::Color32::DARK_RED, "FEHLER");
+                                ui.colored_label(theme::ERROR, "FEHLER");
                             }
                         }
                         ui.end_row();
@@ -815,26 +913,32 @@ impl eframe::App for App {
             self.add_inputs(dropped);
         }
         let busy = self.running.is_some();
-        egui::Panel::bottom("run").min_size(60.0).show(ui, |ui| {
-            ui.add_space(6.0);
-            self.ui_run(ui, &ctx);
-            ui.add_space(6.0);
-        });
+        let bar = egui::Frame::side_top_panel(ui.style())
+            .fill(theme::BAR)
+            .stroke(egui::Stroke::new(1.0, theme::ACCENT.gamma_multiply(0.35)));
+        egui::Panel::bottom("run")
+            .min_size(56.0)
+            .frame(bar)
+            .show(ui, |ui| {
+                ui.add_space(6.0);
+                self.ui_run(ui, &ctx);
+                ui.add_space(6.0);
+            });
         self.ui_confirm(&ctx);
         egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.add_enabled_ui(!busy, |ui| {
-                    ui.heading("1. Eingabe");
+                    section(ui, "1", "Eingabe");
                     self.ui_input(ui);
                     ui.separator();
-                    ui.heading("2. Einstellungen");
+                    section(ui, "2", "Einstellungen");
                     self.ui_presets(ui);
                     ui.add_space(4.0);
                     self.ui_settings(ui);
                 });
                 if self.finished.is_some() {
                     ui.separator();
-                    ui.heading("3. Ergebnis");
+                    section(ui, "3", "Ergebnis");
                     self.ui_result(ui);
                 }
             });
@@ -870,7 +974,9 @@ mod tests {
             ..Default::default()
         };
         let mut f = eframe::Frame::_new_kittest();
-        let out = ctx.run_ui(input, |ui| app.ui(ui, &mut f));
+        let mut out = ctx.run_ui(input, |ui| app.ui(ui, &mut f));
+        // Kein Renderer im Test: Textur-Updates verwerfen.
+        out.textures_delta.clear();
         let mut v = Vec::new();
         for cs in &out.shapes {
             collect(&cs.shape, &mut v);
