@@ -189,7 +189,18 @@ impl App {
         }
     }
 
-    fn add_inputs(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
+    /// Läuft gerade ein Export?
+    pub fn is_running(&self) -> bool {
+        self.running.is_some()
+    }
+
+    /// Ist ein Export abgeschlossen (Ergebnis wird angezeigt)?
+    pub fn is_finished(&self) -> bool {
+        self.finished.is_some()
+    }
+
+    /// Dateien oder Ordner hinzufügen (wie per Dialog oder Drag & Drop).
+    pub fn add_inputs(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
         for p in paths {
             if !self.inputs.contains(&p) {
                 self.inputs.push(p);
@@ -345,14 +356,20 @@ impl App {
                 for (i, p) in self.inputs.iter().enumerate() {
                     ui.horizontal(|ui| {
                         if ui
-                            .small_button("✕")
+                            .small_button("×")
                             .on_hover_text(l.t("Entfernen", "Remove"))
                             .clicked()
                         {
                             remove = Some(i);
                         }
                         let kind = if p.is_dir() { "📁" } else { "🎵" };
-                        ui.label(format!("{kind} {}", p.display()));
+                        // Nur der Name, der volle Pfad beim Überfahren (Platz im kleinen Fenster).
+                        let name = p.file_name().map_or_else(
+                            || p.display().to_string(),
+                            |n| n.to_string_lossy().into(),
+                        );
+                        ui.label(format!("{kind} {name}"))
+                            .on_hover_text(p.display().to_string());
                     });
                 }
             });
@@ -955,7 +972,10 @@ fn result_table(ui: &mut egui::Ui, l: Lang, files: &[FileOutcome]) {
                     }
                     ui.end_row();
                     for o in files {
-                        ui.label(&o.display);
+                        let name = Path::new(&o.display)
+                            .file_name()
+                            .map_or_else(|| o.display.clone(), |n| n.to_string_lossy().into());
+                        ui.label(name).on_hover_text(&o.display);
                         match &o.status {
                             Status::Ok { report: r } => {
                                 ui.label("ok");

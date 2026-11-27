@@ -1,6 +1,8 @@
-# leveled-audio – Bedienungsanleitung
+# Leveled Audio / leveled-audio – Bedienungsanleitung
 
-leveled-audio bearbeitet Sprachaufnahmen (WAV) im Stapel, offline und ohne weitere Installation:
+[English](GUIDE.md) · **Deutsch**
+
+Leveled Audio (Oberfläche) bzw. `leveled-audio` (Kommandozeile) bearbeitet Sprachaufnahmen (WAV) im Stapel, offline und ohne weitere Installation:
 
 ```
 Hochpass → Rauschreduktion + Knackser-Absenkung → Leveler (+ Pausen-Absenkung)
@@ -151,9 +153,14 @@ Eine schlichte Oberfläche zum Testen: Dateien importieren, alle Einstellungen v
 
 **Sprache:** Die Oberfläche startet auf Englisch. Oben rechts schaltet `EN` / `DE` jederzeit zwischen Englisch und Deutsch um. Warnungen und Fehlermeldungen aus der Verarbeitung erscheinen derzeit immer auf Deutsch.
 
+<p align="center">
+  <img src="images/gui-settings-de.png" width="420" alt="Eingabe und Einstellungen">
+  <img src="images/gui-result-de.png" width="420" alt="Ergebnis nach dem Export">
+</p>
+
 Das Fenster ist von oben nach unten aufgebaut:
 
-1. **Eingabe:** „Dateien hinzufügen…“ und „Ordner hinzufügen…“, oder Dateien und Ordner ins Fenster ziehen. „Unterordner einbeziehen“ entspricht `-r`. Darunter steht, wie viele WAV-Dateien gefunden wurden. Bereits exportierte Dateien (`-leveled-` im Namen) werden beim Ordner-Import übergangen; einzeln hinzugefügt werden sie verarbeitet.
+1. **Eingabe:** „Dateien hinzufügen…“ und „Ordner hinzufügen…“, oder Dateien und Ordner ins Fenster ziehen. „Unterordner einbeziehen“ entspricht `-r`. Die Liste zeigt die Namen, der volle Pfad erscheint beim Überfahren mit der Maus. Darunter steht, wie viele WAV-Dateien gefunden wurden. Bereits exportierte Dateien (`-leveled-` im Namen) werden beim Ordner-Import übergangen; einzeln hinzugefügt werden sie verarbeitet.
 2. **Einstellungen:**
    - Preset wählen, ein eigenes Preset laden oder die aktuellen Werte als Preset speichern. Die gespeicherte Datei funktioniert auch mit `leveled-audio --preset`.
    - „Zurücksetzen“ stellt das gewählte bzw. geladene Preset wieder her.

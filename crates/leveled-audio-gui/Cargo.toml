@@ -20,6 +20,8 @@ eframe.workspace = true
 rfd.workspace = true
 
 [dev-dependencies]
+egui_system_font_provider = "0.37"
+egui_kittest = { version = "0.37", features = ["eframe", "wgpu", "snapshot"] }
 leveled-audio-testkit.workspace = true
 leveled-audio-io.workspace = true
 

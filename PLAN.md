@@ -914,7 +914,7 @@ Offene Fragen:
 - Optionaler Klang-EQ (z. B. Präsenz/Höhen, wie die Referenz +2–3 dB über 6 kHz), Default aus. Adaptiv je Abstand: Die Referenz hebt bei 1 m die Höhen über 3 kHz um ≈ 3 dB an (Abstandstest).
 - FLAC/MP3-Eingabe (`symphonia`), FLAC-Ausgabe. Für MP3-Ausgabe muss die Lizenz von LAME geprüft werden (LGPL).
 - Mehrspur-Modus (synchrone Sprecherspuren), Noise-Shaping, Metadaten (bext/iXML/Cue) übernehmen.
-- GUI-Ausbau nach Phase 6: Abhören mit A/B-Vergleich (Original/Bearbeitet, lautheitsangeglichen), Wellenform, Vorschau einzelner Regionen per Seek, Notarisierung des macOS-Bundles (braucht ein Apple-Entwicklerkonto). *Das App-Bundle selbst (`scripts/macos-app.sh`, Start ohne Terminal) gibt es seit 2026-11-27, ebenso Programm-Icon (`scripts/make-icon.py` → `assets/icon.png`), Farbschema und den Anzeigenamen „Leveled Audio“.*
+- GUI-Ausbau nach Phase 6: Abhören mit A/B-Vergleich (Original/Bearbeitet, lautheitsangeglichen), Wellenform, Vorschau einzelner Regionen per Seek, Notarisierung des macOS-Bundles (braucht ein Apple-Entwicklerkonto). *Das App-Bundle selbst (`scripts/macos-app.sh`, Start ohne Terminal) gibt es seit 2026-11-27, ebenso Programm-Icon (`scripts/make-icon.py` → `assets/icon.png`), Farbschema und den Anzeigenamen „Leveled Audio“; Oberfläche Englisch/Deutsch umschaltbar, README und Anleitung zweisprachig (`README.de.md`, `docs/GUIDE.md`) mit Screenshots aus `--example screenshots`.*
 - Signierung und Notarisierung (macOS) sowie Installer.
 
 ---
