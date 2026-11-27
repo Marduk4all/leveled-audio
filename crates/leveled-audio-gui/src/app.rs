@@ -455,7 +455,7 @@ impl App {
     fn ui_presets(&mut self, ui: &mut egui::Ui) {
         let l = self.lang;
         ui.horizontal_wrapped(|ui| {
-            ui.label("Preset");
+            let preset_label = ui.label("Preset");
             let mut chosen = None;
             egui::ComboBox::from_id_salt("preset")
                 .selected_text(&self.preset_label)
@@ -470,7 +470,9 @@ impl App {
                             chosen = Some(name);
                         }
                     }
-                });
+                })
+                .response
+                .labelled_by(preset_label.id);
             if let Some(name) = chosen {
                 self.settings = Settings::preset(name).expect("eingebautes Preset");
                 self.base = self.settings.clone();
@@ -563,8 +565,8 @@ impl App {
                                     for p in params.iter().filter(|p| p.primary == primary) {
                                         if let Some(v) = lookup(&table, p.key) {
                                             let (label, help) = l.param(p);
-                                            ui.label(label).on_hover_text(help);
-                                            if let Some(nv) = param_widget(ui, l, p, v) {
+                                            let name = ui.label(label).on_hover_text(help);
+                                            if let Some(nv) = param_widget(ui, l, p, v, name.id) {
                                                 changes.push((p.key, nv));
                                             }
                                             ui.end_row();
@@ -690,8 +692,9 @@ impl App {
                 {
                     self.start(ctx);
                 }
-                ui.label(l.t("Parallele Dateien", "Parallel files"));
-                ui.add(egui::Slider::new(&mut self.jobs, 1..=16));
+                let jobs_label = ui.label(l.t("Parallele Dateien", "Parallel files"));
+                ui.add(egui::Slider::new(&mut self.jobs, 1..=16))
+                    .labelled_by(jobs_label.id);
                 let weak = ui.visuals().weak_text_color();
                 let (text, color) = match &self.finished {
                     _ if !ok => (
@@ -823,13 +826,21 @@ impl App {
 }
 
 /// Bedienelement für einen Parameter; liefert den neuen Wert bei Änderung.
-fn param_widget(ui: &mut egui::Ui, l: Lang, p: &ParamSpec, v: &toml::Value) -> Option<toml::Value> {
+/// `name`: Beschriftung in der Tabelle, dient Screenreadern als Name des Reglers.
+fn param_widget(
+    ui: &mut egui::Ui,
+    l: Lang,
+    p: &ParamSpec,
+    v: &toml::Value,
+    name: egui::Id,
+) -> Option<toml::Value> {
     let help = l.param(p).1;
     match p.kind {
         ParamKind::Bool => {
             let mut b = v.as_bool().unwrap_or(false);
             ui.checkbox(&mut b, "")
                 .on_hover_text(help)
+                .labelled_by(name)
                 .changed()
                 .then_some(b.into())
         }
@@ -853,7 +864,8 @@ fn param_widget(ui: &mut egui::Ui, l: Lang, p: &ParamSpec, v: &toml::Value) -> O
                         .fixed_decimals(decimals)
                         .clamping(egui::SliderClamping::Always),
                 )
-                .on_hover_text(help);
+                .on_hover_text(help)
+                .labelled_by(name);
             r.changed().then(|| {
                 let f = 10f64.powi(decimals as i32);
                 ((shown * f).round() / f / scale).into()
@@ -876,7 +888,8 @@ fn param_widget(ui: &mut egui::Ui, l: Lang, p: &ParamSpec, v: &toml::Value) -> O
                     }
                 })
                 .response
-                .on_hover_text(help);
+                .on_hover_text(help)
+                .labelled_by(name);
             out
         }
         ParamKind::IntChoice(options) => {
@@ -892,7 +905,8 @@ fn param_widget(ui: &mut egui::Ui, l: Lang, p: &ParamSpec, v: &toml::Value) -> O
                     }
                 })
                 .response
-                .on_hover_text(help);
+                .on_hover_text(help)
+                .labelled_by(name);
             out
         }
         ParamKind::FftSize => {
@@ -912,7 +926,8 @@ fn param_widget(ui: &mut egui::Ui, l: Lang, p: &ParamSpec, v: &toml::Value) -> O
                     }
                 })
                 .response
-                .on_hover_text(help);
+                .on_hover_text(help)
+                .labelled_by(name);
             out
         }
     }

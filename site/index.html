@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Leveled Audio – automatic audio leveling and loudness normalization for podcasts and video</title>
+  <meta name="description" content="Free, open-source app that automatically levels speakers, reduces noise and normalizes loudness (LUFS, EBU R128) for podcasts, video production, interviews and voice-over. Batch processing, offline, for macOS, Windows and Linux.">
+  <meta name="keywords" content="audio leveler, loudness normalization, LUFS, EBU R128, podcast audio, video dialogue, noise reduction, batch audio processing, voice-over, open source">
+  <link rel="canonical" href="https://marduk4all.github.io/leveled-audio/">
+  <link rel="alternate" hreflang="en" href="https://marduk4all.github.io/leveled-audio/">
+  <link rel="alternate" hreflang="de" href="https://marduk4all.github.io/leveled-audio/de/">
+  <link rel="alternate" hreflang="x-default" href="https://marduk4all.github.io/leveled-audio/">
+  <link rel="icon" type="image/png" href="images/icon-256.png">
+  <link rel="apple-touch-icon" href="images/icon-256.png">
+  <meta name="theme-color" content="#4c3bcf">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Leveled Audio">
+  <meta property="og:title" content="Leveled Audio – automatic audio leveling for podcasts and video">
+  <meta property="og:description" content="Even out speakers, reduce noise and hit your loudness target (LUFS, EBU R128). Free, open source, offline. macOS, Windows, Linux.">
+  <meta property="og:url" content="https://marduk4all.github.io/leveled-audio/">
+  <meta property="og:image" content="https://marduk4all.github.io/leveled-audio/images/social-preview.jpg">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Leveled Audio: app icon, title, use cases and a screenshot of the desktop app">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="de_DE">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <link rel="stylesheet" href="style.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Leveled Audio",
+    "alternateName": "leveled-audio",
+    "description": "Automatic audio leveling, noise reduction and loudness normalization (LUFS, EBU R128) for podcasts, video production, interviews and voice-over. Batch processing, offline.",
+    "applicationCategory": "MultimediaApplication",
+    "applicationSubCategory": "Audio editing",
+    "operatingSystem": "macOS, Windows, Linux",
+    "softwareVersion": "0.1.0",
+    "license": "https://github.com/Marduk4all/leveled-audio#license",
+    "isAccessibleForFree": true,
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "url": "https://marduk4all.github.io/leveled-audio/",
+    "downloadUrl": "https://github.com/Marduk4all/leveled-audio/releases/latest",
+    "codeRepository": "https://github.com/Marduk4all/leveled-audio",
+    "image": "https://marduk4all.github.io/leveled-audio/images/icon-256.png",
+    "screenshot": "https://marduk4all.github.io/leveled-audio/images/gui-settings-en.png",
+    "inLanguage": ["en", "de"],
+    "featureList": [
+      "Adaptive speech leveler",
+      "Automatic noise reduction",
+      "Handling-noise and knock removal",
+      "Loudness normalization to LUFS targets (EBU R128, ITU-R BS.1770-4)",
+      "True-peak limiter",
+      "Batch processing of WAV files",
+      "Desktop app and command line"
+    ]
+  }
+  </script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="hero">
+  <div class="wrap">
+    <nav aria-label="Main">
+      <a class="brand" href="./"><img src="images/icon-256.png" alt="" width="36" height="36"> Leveled Audio</a>
+      <div class="links">
+        <a href="#use-cases">Use cases</a>
+        <a href="#features">Features</a>
+        <a href="https://github.com/Marduk4all/leveled-audio">GitHub</a>
+        <a href="de/" hreflang="de" lang="de">Deutsch</a>
+      </div>
+    </nav>
+    <div class="hero-grid">
+      <div>
+        <h1>Even, clear speech audio. Automatically.</h1>
+        <p class="lead">Leveled Audio evens out speakers, reduces background noise and hits your loudness target for podcasts, videos, interviews and voice-over. A whole folder at a time, on your own computer.</p>
+        <ul class="chips" aria-label="Made for">
+          <li>Podcasts</li><li>Video</li><li>Interviews</li><li>Voice-over</li><li>Lectures</li>
+        </ul>
+        <div class="cta">
+          <a class="button primary" href="https://github.com/Marduk4all/leveled-audio/releases/latest">Download for free</a>
+          <a class="button ghost" href="https://github.com/Marduk4all/leveled-audio">View on GitHub</a>
+        </div>
+        <p class="small">macOS (Apple Silicon &amp; Intel) · Windows · Linux · open source (MIT / Apache-2.0) · no account, no upload</p>
+      </div>
+      <div class="hero-shot">
+        <img src="images/gui-settings-en.png" width="1200" height="1280"
+             alt="The Leveled Audio desktop app: two WAV files added, preset podcast-stereo selected, leveler strength 130 %, Export button at the bottom">
+      </div>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section id="use-cases" aria-labelledby="h-use">
+    <h2 id="h-use">Use cases</h2>
+    <div class="cards">
+      <article class="card">
+        <span class="emoji" aria-hidden="true">🎙</span>
+        <h3>Podcasts</h3>
+        <ul>
+          <li>Guests on different microphones or remote calls end up equally loud.</li>
+          <li>−16 LUFS by default, as most podcast platforms recommend.</li>
+          <li>Album mode: one shared gain for a whole season.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <span class="emoji" aria-hidden="true">🎬</span>
+        <h3>Video production</h3>
+        <ul>
+          <li>Dialogue and voice-over for YouTube, social media, documentaries and corporate video.</li>
+          <li>Presenters who move around or turn away stay at a steady level.</li>
+          <li>−14 LUFS for streaming, −23 LUFS for broadcast.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <span class="emoji" aria-hidden="true">🎓</span>
+        <h3>Lectures &amp; webinars</h3>
+        <ul>
+          <li>Quiet and loud speakers are evened out.</li>
+          <li>Less room noise in lecture-hall and screen recordings.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <span class="emoji" aria-hidden="true">📚</span>
+        <h3>Audiobooks &amp; narration</h3>
+        <ul>
+          <li>Many recording sessions, one consistent loudness.</li>
+          <li>Controlled peaks for any distribution format.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <span class="emoji" aria-hidden="true">📻</span>
+        <h3>Radio &amp; broadcast</h3>
+        <ul>
+          <li>EBU R128 preset (−23 LUFS) with natural room tone.</li>
+          <li>JSON report with all measurements for QA and archives.</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section id="features" aria-labelledby="h-feat">
+    <h2 id="h-feat">What it does</h2>
+    <div class="cards">
+      <div class="card"><h3>Adaptive leveler</h3><p>Evens out speakers and phrases. Gain changes happen in pauses, and pauses are not boosted. Up to 130 % strength for large changes in microphone distance.</p></div>
+      <div class="card"><h3>Noise reduction</h3><p>Finds a noise profile automatically in the quietest pauses of each file, or learns it once from room tone.</p></div>
+      <div class="card"><h3>Handling noise</h3><p>Detects low-frequency knocks and microphone handling noise, lowers them and never boosts them.</p></div>
+      <div class="card"><h3>Loudness &amp; true peak</h3><p>ITU-R BS.1770-4 / EBU R128 normalization per file or as an album, with an 8× oversampled true-peak limiter.</p></div>
+      <div class="card"><h3>Compressor &amp; pause gate</h3><p>Gently catches loud laughs and shouts. An optional pause gate gives a tight "radio" sound.</p></div>
+      <div class="card"><h3>Safe batch processing</h3><p>Originals are never touched, there are no half-written files, and the same input always gives byte-identical output.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-shots">
+    <h2 id="h-shots">Screenshots</h2>
+    <div class="shots">
+      <figure>
+        <img src="images/gui-settings-en.png" width="1200" height="1280" loading="lazy"
+             alt="Input and settings: file list, preset selection, expanded leveler group with a strength slider">
+        <figcaption>Add files, choose a preset, adjust settings: every control explains itself on hover.</figcaption>
+      </figure>
+      <figure>
+        <img src="images/gui-result-en.png" width="1200" height="1400" loading="lazy"
+             alt="Result table after export: input and output loudness in LUFS, true peak and gain for each file">
+        <figcaption>After export: loudness, true peak and applied gain for every file.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-targets">
+    <h2 id="h-targets">Loudness targets</h2>
+    <table>
+      <caption>Common delivery targets. Check your platform's current specification.</caption>
+      <thead><tr><th scope="col">Destination</th><th scope="col">Target</th><th scope="col">Setting</th></tr></thead>
+      <tbody>
+        <tr><td>Podcast (stereo)</td><td>−16 LUFS</td><td>preset <code>podcast-stereo</code> (default)</td></tr>
+        <tr><td>Podcast (mono)</td><td>−19 LUFS</td><td>preset <code>podcast-mono</code></td></tr>
+        <tr><td>YouTube / streaming video</td><td>−14 LUFS</td><td>Target loudness −14</td></tr>
+        <tr><td>Broadcast (EBU R128)</td><td>−23 LUFS</td><td>preset <code>ebu-r128</code></td></tr>
+        <tr><td>Broadcast (ATSC A/85, US)</td><td>−24 LUFS</td><td>Target loudness −24</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="start" aria-labelledby="h-start">
+    <h2 id="h-start">Get started</h2>
+    <ol class="steps">
+      <li><a href="https://github.com/Marduk4all/leveled-audio/releases/latest">Download</a> the archive for your system and unpack it. On macOS, move <strong>Leveled Audio.app</strong> to Applications and open it once with right-click → Open.</li>
+      <li>Add WAV files or folders, or drag them into the window.</li>
+      <li>Pick a preset, then click <strong>Export</strong>. Results are saved next to the originals as <code>name-leveled-&lt;preset&gt;.wav</code>.</li>
+    </ol>
+    <p>Prefer the command line? The same processing is available as <code>leveled-audio</code>:</p>
+    <pre><code>leveled-audio process recordings/ -r -o done/                 # podcast, −16 LUFS
+leveled-audio process dialogue.wav -o done/ --target-lufs -14  # YouTube video
+leveled-audio process interview.wav -o done/ --preset ebu-r128 # broadcast</code></pre>
+    <p>Full documentation: <a href="https://github.com/Marduk4all/leveled-audio/blob/main/docs/GUIDE.md">user guide</a> · <a href="https://github.com/Marduk4all/leveled-audio/blob/main/docs/ANLEITUNG.md" hreflang="de">Bedienungsanleitung (Deutsch)</a></p>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Leveled Audio is free software, dual-licensed under MIT or Apache-2.0. <a href="https://github.com/Marduk4all/leveled-audio">Source code</a> · <a href="https://github.com/Marduk4all/leveled-audio/issues">Report a bug</a> · <a href="https://github.com/Marduk4all/leveled-audio/discussions">Questions &amp; ideas</a> · <a href="de/" hreflang="de" lang="de">Deutsch</a></p>
+  </div>
+</footer>
+</body>
+</html>

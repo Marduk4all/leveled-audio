@@ -2135,6 +2135,87 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
+name = "leveled-audio-analysis"
+version = "0.1.0"
+dependencies = [
+ "ebur128",
+ "leveled-audio-dsp",
+ "leveled-audio-testkit",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "leveled-audio-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "ctrlc",
+ "indicatif",
+ "jsonschema",
+ "leveled-audio-io",
+ "leveled-audio-pipeline",
+ "leveled-audio-testkit",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
+name = "leveled-audio-dsp"
+version = "0.1.0"
+dependencies = [
+ "realfft",
+]
+
+[[package]]
+name = "leveled-audio-gui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "eframe",
+ "egui_kittest",
+ "egui_system_font_provider",
+ "leveled-audio-cli",
+ "leveled-audio-io",
+ "leveled-audio-pipeline",
+ "leveled-audio-testkit",
+ "rfd",
+ "toml",
+]
+
+[[package]]
+name = "leveled-audio-io"
+version = "0.1.0"
+dependencies = [
+ "hound",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "leveled-audio-pipeline"
+version = "0.1.0"
+dependencies = [
+ "leveled-audio-analysis",
+ "leveled-audio-dsp",
+ "leveled-audio-io",
+ "leveled-audio-testkit",
+ "rayon",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "toml",
+]
+
+[[package]]
+name = "leveled-audio-testkit"
+version = "0.1.0"
+dependencies = [
+ "leveled-audio-io",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4202,87 +4283,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "leveled-audio-analysis"
-version = "0.1.0"
-dependencies = [
- "ebur128",
- "serde",
- "thiserror 2.0.21",
- "leveled-audio-dsp",
- "leveled-audio-testkit",
-]
-
-[[package]]
-name = "leveled-audio-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "ctrlc",
- "indicatif",
- "jsonschema",
- "serde",
- "serde_json",
- "toml",
- "leveled-audio-io",
- "leveled-audio-pipeline",
- "leveled-audio-testkit",
-]
-
-[[package]]
-name = "leveled-audio-dsp"
-version = "0.1.0"
-dependencies = [
- "realfft",
-]
-
-[[package]]
-name = "leveled-audio-gui"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "eframe",
- "egui_kittest",
- "egui_system_font_provider",
- "rfd",
- "toml",
- "leveled-audio-cli",
- "leveled-audio-io",
- "leveled-audio-pipeline",
- "leveled-audio-testkit",
-]
-
-[[package]]
-name = "leveled-audio-io"
-version = "0.1.0"
-dependencies = [
- "hound",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "leveled-audio-pipeline"
-version = "0.1.0"
-dependencies = [
- "rayon",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "toml",
- "leveled-audio-analysis",
- "leveled-audio-dsp",
- "leveled-audio-io",
- "leveled-audio-testkit",
-]
-
-[[package]]
-name = "leveled-audio-testkit"
-version = "0.1.0"
-dependencies = [
- "leveled-audio-io",
-]
 
 [[package]]
 name = "vsimd"

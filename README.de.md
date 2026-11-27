@@ -25,6 +25,7 @@ Es gibt das Programm als **Desktop-App** (macOS, Windows, Linux) und als **Komma
 
 <p align="center">
   <a href="https://github.com/Marduk4all/leveled-audio/releases/latest"><b>⬇ Neueste Version herunterladen</b></a> ·
+  <a href="https://marduk4all.github.io/leveled-audio/de/">Webseite</a> ·
   <a href="docs/ANLEITUNG.md">Bedienungsanleitung</a> ·
   <a href="#schnellstart">Schnellstart</a>
 </p>
@@ -154,6 +155,7 @@ Bei geschnittenen Projekten exportierst du die Dialogspur aus dem Schnittprogram
 
 ## Dokumentation
 
+- **[Webseite](https://marduk4all.github.io/leveled-audio/de/):** Überblick, Anwendungsfälle und Download.
 - **[Bedienungsanleitung (Deutsch)](docs/ANLEITUNG.md):** Installation, alle Einstellungen mit Empfehlungen, Presets, Album-Modus, JSON-Report, häufige Fragen.
 - **[User guide (English)](docs/GUIDE.md)**
 - **[Schema des JSON-Reports](docs/report.schema.json)**
@@ -188,7 +190,7 @@ scripts/make-icon.py 1024 assets/icon.png && scripts/make-icon.py 256 assets/ico
 swift scripts/social-preview.swift          # nur macOS: docs/images/social-preview.png
 ```
 
-Fehlerberichte und Ideen sind als [Issues](https://github.com/Marduk4all/leveled-audio/issues) willkommen.
+Fehlerberichte und Ideen sind als [Issues](https://github.com/Marduk4all/leveled-audio/issues) willkommen, Fragen in den [Discussions](https://github.com/Marduk4all/leveled-audio/discussions). Siehe [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Lizenz
 

@@ -25,6 +25,7 @@ You can use it as a **desktop app** (macOS, Windows, Linux) or as the **command-
 
 <p align="center">
   <a href="https://github.com/Marduk4all/leveled-audio/releases/latest"><b>⬇ Download the latest release</b></a> ·
+  <a href="https://marduk4all.github.io/leveled-audio/">Website</a> ·
   <a href="docs/GUIDE.md">User guide</a> ·
   <a href="#quick-start">Quick start</a>
 </p>
@@ -154,6 +155,7 @@ For edited projects, export the dialogue stem from your editor (DaVinci Resolve,
 
 ## Documentation
 
+- **[Website](https://marduk4all.github.io/leveled-audio/):** overview, use cases and download.
 - **[User guide (English)](docs/GUIDE.md):** installation, every setting with recommendations, presets, album mode, JSON report, FAQ.
 - **[Bedienungsanleitung (Deutsch)](docs/ANLEITUNG.md)**
 - **[JSON report schema](docs/report.schema.json)**
@@ -188,7 +190,7 @@ scripts/make-icon.py 1024 assets/icon.png && scripts/make-icon.py 256 assets/ico
 swift scripts/social-preview.swift          # macOS only: docs/images/social-preview.png
 ```
 
-Bug reports and ideas are welcome as [issues](https://github.com/Marduk4all/leveled-audio/issues).
+Bug reports and ideas are welcome as [issues](https://github.com/Marduk4all/leveled-audio/issues), questions in [Discussions](https://github.com/Marduk4all/leveled-audio/discussions). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

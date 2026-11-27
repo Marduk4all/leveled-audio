@@ -1,0 +1,62 @@
+name: Bug report
+description: Something doesn't work or sounds wrong
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! You can write in English or German.
+        For questions ("Which preset for …?") please use Discussions instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead? For audio problems, describe what you hear (pumping, bubbling, too quiet, noise coming and going …).
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The command you ran, or the clicks in the app.
+      placeholder: |
+        leveled-audio process interview.wav -o done/ --preset podcast-stereo
+  - type: dropdown
+    id: interface
+    attributes:
+      label: Interface
+      options:
+        - Desktop app
+        - Command line
+        - Both
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`leveled-audio --version`, or the release you downloaded"
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Input file details
+      description: Sample rate, bit depth, mono/stereo, length. If possible attach the JSON report (`--report-json report.json` or "Save JSON report…" in the app).
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output or error messages
+      render: text
