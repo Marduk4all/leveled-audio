@@ -180,11 +180,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 ```
 
-To regenerate the screenshots and the app icon:
+To regenerate the screenshots, the app icon and the social preview image:
 
 ```bash
 cargo run --release -p leveled-audio-gui --example screenshots -- /path/to/workdir docs/images
 scripts/make-icon.py 1024 assets/icon.png && scripts/make-icon.py 256 assets/icon-256.png
+swift scripts/social-preview.swift          # macOS only: docs/images/social-preview.png
 ```
 
 Bug reports and ideas are welcome as [issues](https://github.com/Marduk4all/leveled-audio/issues).
