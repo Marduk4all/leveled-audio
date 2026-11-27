@@ -1,11 +1,16 @@
 [package]
 name = "leveled-audio-testkit"
-description = "Testsignale und Messhelfer (nur für Tests)"
+description = "Leveled Audio test signals and measurement helpers (tests only)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+authors.workspace = true
 
 [dependencies]
 leveled-audio-io.workspace = true

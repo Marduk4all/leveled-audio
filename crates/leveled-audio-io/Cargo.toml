@@ -1,11 +1,16 @@
 [package]
 name = "leveled-audio-io"
-description = "WAV/RF64 lesen und schreiben"
+description = "Leveled Audio: WAV and RF64 reading and writing"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+authors.workspace = true
 
 [dependencies]
 thiserror.workspace = true

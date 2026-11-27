@@ -1,11 +1,16 @@
 [package]
 name = "leveled-audio-analysis"
-description = "Analyse: Lautheit (BS.1770/R128), später VAD und Rauschprofil"
+description = "Leveled Audio: loudness measurement (ITU-R BS.1770 / EBU R128), voice activity detection, noise profiles"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+authors.workspace = true
 
 [dependencies]
 leveled-audio-dsp.workspace = true

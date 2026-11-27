@@ -1,11 +1,16 @@
 [package]
 name = "leveled-audio-dsp"
-description = "DSP-Bausteine (ohne I/O): Oversampling, True-Peak-Limiter, Dither"
+description = "Leveled Audio DSP building blocks: spectral noise reduction, oversampling, true-peak limiter, dither"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+authors.workspace = true
 
 [dependencies]
 realfft.workspace = true

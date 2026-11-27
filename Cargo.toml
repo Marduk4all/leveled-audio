@@ -8,6 +8,11 @@ edition = "2024"
 rust-version = "1.100"
 license = "MIT OR Apache-2.0"
 publish = false
+authors = ["The Leveled Audio authors"]
+repository = "https://github.com/Marduk4all/leveled-audio"
+homepage = "https://github.com/Marduk4all/leveled-audio"
+keywords = ["audio", "podcast", "loudness", "normalization", "noise-reduction"]
+categories = ["multimedia::audio", "command-line-utilities"]
 
 [workspace.dependencies]
 leveled-audio-dsp = { path = "crates/leveled-audio-dsp" }

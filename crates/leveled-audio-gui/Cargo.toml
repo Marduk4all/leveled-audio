@@ -1,11 +1,16 @@
 [package]
 name = "leveled-audio-gui"
-description = "Einfache grafische Oberfläche „Leveled Audio“ (egui)"
+description = "Leveled Audio desktop app: audio leveling, noise reduction and LUFS loudness normalization for podcasts and video"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories = ["multimedia::audio", "gui"]
+authors.workspace = true
 
 [[bin]]
 name = "leveled-audio-gui"

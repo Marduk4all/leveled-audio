@@ -1,11 +1,16 @@
 [package]
 name = "leveled-audio-pipeline"
-description = "Verarbeitungskette, Pass-Orchestrierung, Batch"
+description = "Leveled Audio processing chain: leveler, noise reduction, compressor, loudness normalization, limiter"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+authors.workspace = true
 
 [dependencies]
 leveled-audio-dsp.workspace = true
