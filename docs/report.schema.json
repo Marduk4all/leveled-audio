@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "leveled-audio JSON-Report",
+  "title": "Leveled Audio JSON-Report",
   "description": "Report von `leveled-audio process --report-json` und `leveled-audio analyze --json`. Dateien stehen in Eingabereihenfolge. Werte, die ein Durchgang nicht ermittelt, sind null. Schema-Version 2 (Phase 5): Hochpass, Störgeräusche, Pausen-Absenkung, Kompressor.",
   "type": "object",
   "additionalProperties": false,

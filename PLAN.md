@@ -1,6 +1,6 @@
 # leveled-audio – Implementierungsplan (MVP)
 
-Arbeitstitel: **leveled-audio** (Binary `leveled-audio`, Crates `leveled-audio-*`). Lizenz: MIT OR Apache-2.0.
+Name: **Leveled Audio** (Kommandozeile `leveled-audio`, GUI `leveled-audio-gui` bzw. `Leveled Audio.app`, Crates `leveled-audio-*`). Lizenz: MIT OR Apache-2.0.
 Stand: 2026-11-26. Status: Plan, noch kein Produktivcode.
 
 ---
@@ -12,7 +12,7 @@ Stand: 2026-11-26. Status: Plan, noch kein Produktivcode.
 | Mehrere Sprecher | Gemischt in **einer** Datei. Der Leveler gleicht innerhalb der Datei an, die Loudness-Normalisierung zwischen Dateien. Mehrspur erst nach dem MVP. |
 | Lizenz | MIT OR Apache-2.0. Kein GPL-Code, Lizenzprüfung per `cargo-deny`. |
 | Lautheitsmessung | Crate `ebur128` (MIT, Port von libebur128) mit eigenen Verifikationstests. Eigene DSP-Arbeit nur dort, wo nötig (Oversampler für den Limiter). |
-| Name | Arbeitstitel `leveled-audio`. Wird an einer Stelle definiert (Workspace-Metadaten und eine Konstante), damit er sich leicht ändern lässt. |
+| Name | **Leveled Audio**, Befehl `leveled-audio`. Wird an einer Stelle definiert (Workspace-Metadaten und eine Konstante), damit er sich leicht ändern lässt. |
 
 Weitere Entscheidungen, die ich im Plan treffe (alle in Abschnitt 3 und 4 begründet):
 
@@ -378,7 +378,7 @@ Fallstricke:
 | Fassung | Pausen (leiseste 5 % der 50-ms-Abschnitte) | Abstand Pause zu Sprache |
 |---|---|---|
 | Original | −48 dBFS | ≈ 15 dB |
-| leveled-audio | −48 dBFS | ≈ 25 dB |
+| Leveled Audio | −48 dBFS | ≈ 25 dB |
 | Referenz | −96 dBFS | ≈ 68 dB |
 
 Mehr Rauschreduktion allein ist keine Lösung. Über ≈ 15–20 dB hinaus entsteht Musical Noise, und die Sprache klingt dumpf. Deshalb kommt eine **eigene Stufe**: Sie senkt nur Pausen breitbandig ab und lässt Sprache unangetastet.
@@ -591,7 +591,7 @@ JSON zusätzlich mit `tool_version`, vollständigen effektiven Settings und Sett
 
 **Fix oder per Analyse?** Die Werte der Regler sind **fest**. Sie stehen im Preset, sind für alle Dateien gleich und machen das Ergebnis reproduzierbar.
 
-Fast alle Regler beschreiben aber eine **Absicht relativ zur Datei**. Die tatsächlich angewendeten dB rechnet leveled-audio für jede Datei aus ihrer Analyse aus:
+Fast alle Regler beschreiben aber eine **Absicht relativ zur Datei**. Die tatsächlich angewendeten dB rechnet Leveled Audio für jede Datei aus ihrer Analyse aus:
 - Die Rauschreduktion arbeitet mit dem automatisch gefundenen Rauschprofil.
 - Der Leveler gleicht auf den Sprachpegel der Datei an.
 - Die Schwelle des Kompressors liegt relativ zu diesem Sprachpegel.
@@ -775,9 +775,9 @@ Anlass ist der Vergleich mit den Referenzfassungen 001–005, die du am 2026-11-
 2. Es soll eher natürlich klingen.
 3. Weitere Referenzfassungen liegen vor (001–005).
 
-**Vergleich Original / Referenz / leveled-audio (Phase 4)** über alle fünf Paare:
+**Vergleich Original / Referenz / Leveled Audio (Phase 4)** über alle fünf Paare:
 
-| | Referenz | leveled-audio |
+| | Referenz | Leveled Audio |
 |---|---|---|
 | Lautheit | −15,7 … −15,9 LUFS | −16,1 … −16,4 LUFS |
 | True Peak | −1,0 dBTP | −1,1 dBTP |
@@ -789,7 +789,7 @@ Anlass ist der Vergleich mit den Referenzfassungen 001–005, die du am 2026-11-
 - **Störgeräusche:** Die Knackser werden heute als Sprache behandelt und sogar angehoben. Das ist ein Fehler, keine Geschmacksfrage. Daher neu: Hochpass und Störgeräusch-Erkennung (3.13).
 - **Pausen:** Die Referenz gatet hart. Für den gewünschten natürlichen Klang ist die Pausen-Absenkung (3.11) nur ein Regler und standardmäßig **aus**.
 - **Höhen:** Die Referenz hebt sie an. Ein EQ ist eine Geschmacksfrage und bleibt bei „natürlich“ draußen (vorgemerkt unter „Später“).
-- **Lautheit:** Die Referenz trifft −16 bis auf 0,1–0,3 LU darüber, leveled-audio liegt 0,1–0,4 LU darunter. Die Schwelle der Korrekturiteration (3.7) sinkt von 0,5 auf **0,3 LU**. Bei kurzen Dateien kostet das wenig. Bei langen ist die Abweichung selten groß, weil der Kompressor dem Limiter Arbeit abnimmt.
+- **Lautheit:** Die Referenz trifft −16 bis auf 0,1–0,3 LU darüber, Leveled Audio liegt 0,1–0,4 LU darunter. Die Schwelle der Korrekturiteration (3.7) sinkt von 0,5 auf **0,3 LU**. Bei kurzen Dateien kostet das wenig. Bei langen ist die Abweichung selten groß, weil der Kompressor dem Limiter Arbeit abnimmt.
 
 Lieferumfang:
 - Hochpass im Pre-Chain-Slot (3.13).
@@ -895,8 +895,8 @@ Offene Fragen:
 > | Fassung | 1 m | 50 cm | Wechsel (Geräusche) | 5 cm |
 > |---|---|---|---|---|
 > | Referenz | −15,5 | −16,0 | −34,9 | −15,5 |
-> | leveled-audio vorher (60 %) | −18,7 | −16,6 | −24,3 | −14,3 |
-> | leveled-audio jetzt (60 %) | −19,0 | −16,8 | −36,2 | −14,3 |
+> | Leveled Audio vorher (60 %) | −18,7 | −16,6 | −24,3 | −14,3 |
+> | Leveled Audio jetzt (60 %) | −19,0 | −16,8 | −36,2 | −14,3 |
 > | jetzt 100 %, max. Anhebung 20 dB | −16,0 | −16,2 | −36,9 | −16,0 |
 > | jetzt 130 %, max. Anhebung 20 dB | −14,7 | −16,2 | −38,0 | −17,6 |
 >

@@ -379,7 +379,7 @@ const PRESET_COMMENTS: &[(&str, &str)] = &[
 /// Ergänzt die TOML-Ausgabe von `preset show` um Kommentare.
 pub fn annotate_preset(toml: &str) -> String {
     let mut out = String::from(
-        "# leveled-audio-Preset. Nicht genannte Werte kommen vom Basis-Preset (`base`,\n\
+        "# Preset für Leveled Audio. Nicht genannte Werte kommen vom Basis-Preset (`base`,\n\
          # Default podcast-stereo); Werte lassen sich auch einzeln mit --set ändern.\n",
     );
     let mut section = String::new();

@@ -1,4 +1,4 @@
-//! Audio-Ein-/Ausgabe für leveled-audio.
+//! Audio-Ein-/Ausgabe für Leveled Audio.
 //!
 //! Im MVP nur WAV (RIFF und RF64/BW64). Weitere Formate docken später über
 //! [`AudioSource`] / [`AudioSink`] an, ohne dass die Pipeline sich ändert.

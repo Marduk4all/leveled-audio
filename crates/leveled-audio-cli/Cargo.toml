@@ -1,6 +1,6 @@
 [package]
 name = "leveled-audio-cli"
-description = "Kommandozeilenprogramm leveled-audio"
+description = "Kommandozeilenprogramm von Leveled Audio (`leveled-audio`)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,4 +1,4 @@
-//! leveled-audio – Batch-Verarbeitung von Sprachaufnahmen (WAV).
+//! Leveled Audio (Kommandozeile `leveled-audio`) – Batch-Verarbeitung von Sprachaufnahmen (WAV).
 
 mod args;
 mod ui;

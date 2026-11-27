@@ -1,6 +1,6 @@
 [package]
 name = "leveled-audio-gui"
-description = "Einfache grafische Oberfläche für leveled-audio (egui)"
+description = "Einfache grafische Oberfläche „Leveled Audio“ (egui)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

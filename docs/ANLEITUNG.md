@@ -307,7 +307,7 @@ leveled-audio process a.wav -o fertig/ --set denoise.reduction_db=15 --set loudn
 
 Dateien mit Fehlern und übersprungene Dateien (`--skip-existing`) zählen nicht zur Album-Lautheit.
 
-**Korrektur bei starkem Limiting:** Greift der Limiter ein, liegt die Lautheit etwas unter dem Ziel. leveled-audio schätzt diesen Verlust schon beim Messen und gleicht ihn im Gain aus. Weicht die fertige Datei trotzdem um mehr als 0,3 LU ab, rendert leveled-audio sie mit angepasstem Gain neu, im Album-Modus alle Dateien. Das passiert höchstens zweimal. Größere Korrekturen (ab 0,5 dB) nennt die Tabelle unter „Hinweise“.
+**Korrektur bei starkem Limiting:** Greift der Limiter ein, liegt die Lautheit etwas unter dem Ziel. Leveled Audio schätzt diesen Verlust schon beim Messen und gleicht ihn im Gain aus. Weicht die fertige Datei trotzdem um mehr als 0,3 LU ab, rendert leveled-audio sie mit angepasstem Gain neu, im Album-Modus alle Dateien. Das passiert höchstens zweimal. Größere Korrekturen (ab 0,5 dB) nennt die Tabelle unter „Hinweise“.
 
 ---
 

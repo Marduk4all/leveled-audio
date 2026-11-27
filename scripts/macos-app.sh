@@ -16,7 +16,7 @@ version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)"
 
 name="Leveled Audio"
 app="$out/$name.app"
-rm -rf "$app" "$out/leveled-audio.app"
+rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin" "$app/Contents/MacOS/leveled-audio-gui"
 chmod +x "$app/Contents/MacOS/leveled-audio-gui"

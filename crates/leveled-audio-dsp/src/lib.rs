@@ -1,4 +1,4 @@
-//! DSP-Bausteine für leveled-audio. Keine Datei-I/O, keine Threads.
+//! DSP-Bausteine für Leveled Audio. Keine Datei-I/O, keine Threads.
 //!
 //! Konventionen: Audio liegt planar als `Vec<f32>` pro Kanal vor.
 //! Zustände, die über viele Samples akkumulieren, werden in `f64` geführt.

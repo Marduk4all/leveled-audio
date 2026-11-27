@@ -1,4 +1,4 @@
-//! Einfache grafische Oberfläche für leveled-audio (PLAN Phase 6).
+//! Einfache grafische Oberfläche „Leveled Audio“ (PLAN Phase 6).
 //!
 //! `job` enthält die Logik ohne Oberfläche (testbar), `app` die egui-Ansicht.
 

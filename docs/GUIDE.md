@@ -313,7 +313,7 @@ leveled-audio process a.wav -o done/ --set denoise.reduction_db=15 --set loudnes
 
 Files with errors and skipped files (`--skip-existing`) don't count towards the album loudness.
 
-**Correction for heavy limiting:** When the limiter steps in, the loudness ends up slightly below the target. leveled-audio estimates this loss while measuring and compensates for it in the gain. If the finished file still misses the target by more than 0.3 LU, leveled-audio renders it again with an adjusted gain (in album mode, all files). This happens at most twice. Larger corrections (from 0.5 dB) are listed under "Hinweise" below the table.
+**Correction for heavy limiting:** When the limiter steps in, the loudness ends up slightly below the target. Leveled Audio estimates this loss while measuring and compensates for it in the gain. If the finished file still misses the target by more than 0.3 LU, leveled-audio renders it again with an adjusted gain (in album mode, all files). This happens at most twice. Larger corrections (from 0.5 dB) are listed under "Hinweise" below the table.
 
 ---
 
